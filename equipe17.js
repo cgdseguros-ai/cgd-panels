@@ -8,7 +8,7 @@
 
   // ✅ URL do seu WORKER (proxy) — deve aceitar POST e repassar para o Bitrix
   // Ex.: https://cgd-proxy-bx.workers.dev/bx/
-  const PROXY_BASE = "https://SEU-WORKER.workers.dev/bx/"; // <- TROQUE
+  const PROXY_BASE = "https://cgd-bx-proxy.cgdseguros.workers.dev/bx/"; // <- TROQUE
 
   // ✅ Logo
   const LOGO_URL =
