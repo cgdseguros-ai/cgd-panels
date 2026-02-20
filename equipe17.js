@@ -1,391 +1,521 @@
-/* equipe17.js — Painel Equipe Δ (Pipeline 17) via Cloudflare Worker */
+/* equipe17.js — UI “original” (Equipe A — Pipeline 17)
+   - Colunas por assistente
+   - Cards simples: título, ID, etapa, select mover, copiar ID
+   - Topbar: buscar, atualizar, testar conexão, pills contagem
+   - Log inferior
+*/
+(function () {
+  const CFG = (window.EQUIPE17_CFG || window.FINANCEIRO_CFG || {});
+  const DEFAULT = {
+    TITLE: "Equipe A — Pipeline 17 (colunas por assistente)",
+    SUBTITLE: "Bitrix Sites — Cloudflare Worker (sem CORS)",
+    CATEGORY: 17,
+    REFRESH_MS: 60000,
+    DONE_STAGE_NAME: "CONCLUÍDO",
+    LOGO_URL: "",
 
-(() => {
-  "use strict";
+    // Se você não usa Worker, pode pôr WEBHOOK_URL aqui (com / no final)
+    WEBHOOK_URL: "",
 
-  // ====== CONFIG (ajuste só aqui) ======
-  const CFG = {
-    TITLE: "Equipe Δ — Pipeline 17 (colunas por assistente)",
-    WORKER_BASE: "https://cgd-bx-proxy.cgdseguros.workers.dev",
-    PASS: "4627",
+    // Se você usa Worker (recomendado)
+    WORKER_BASE: "",   // ex.: https://seu-worker.pages.dev
+    PASS: "",
 
-    CATEGORY_ID: 17, // Pipeline 17
-    USERS: [
-      { id: 813, name: "MANUELA" },
-      { id: 841, name: "MARIA CLARA" },
-      { id: 3387, name: "BEATRIZ" },
-      { id: 3081, name: "BRUNA LUISA" },
+    // Assistentes (no seu loader/CFG você já define)
+    ASSISTENTES: [
+      // { key:"MANUELA", name:"MANUELA", userId:813 },
     ],
-
-    // paginação / limite
-    PAGE_SIZE: 50,
-    MAX_TOTAL: 500, // evita carregar 1104 de uma vez; pode aumentar depois
   };
 
-  // ====== Helpers ======
-  const el = (tag, attrs = {}, children = []) => {
-    const n = document.createElement(tag);
-    for (const [k, v] of Object.entries(attrs || {})) {
-      if (k === "class") n.className = v;
-      else if (k === "style") Object.assign(n.style, v);
-      else if (k.startsWith("on") && typeof v === "function") n.addEventListener(k.slice(2), v);
-      else n.setAttribute(k, v);
-    }
-    for (const c of [].concat(children || [])) {
-      if (c == null) continue;
-      n.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
-    }
-    return n;
-  };
+  const C = Object.assign({}, DEFAULT, CFG);
+
+  // Helpers
+  const norm = (s) =>
+    String(s || "")
+      .trim()
+      .toUpperCase()
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "");
+
+  const esc = (s) =>
+    String(s == null ? "" : s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const nowHHMMSS = () => {
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, "0");
+    return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  };
 
-  async function bx(method, params = {}) {
-    const url = `${CFG.WORKER_BASE.replace(/\/$/, "")}/bx?method=${encodeURIComponent(method)}&pass=${encodeURIComponent(CFG.PASS)}`;
+  function ensureRoot() {
+    let root = document.getElementById("eqd-root");
+    if (!root) {
+      root = document.createElement("div");
+      root.id = "eqd-root";
+      document.body.prepend(root);
+    }
+    return root;
+  }
+
+  // ===== Transport (Worker OU Webhook direto) =====
+  // Worker endpoint esperado: POST { pass, method, params } => { ok:true, result, next? } (ou {result,next})
+  // Se seu Worker for diferente, me diga o payload que ele espera que eu ajusto.
+  async function callWorker(method, params) {
+    const base = String(C.WORKER_BASE || "").replace(/\/+$/, "");
+    if (!base) throw new Error("WORKER_BASE não definido em window.EQUIPE17_CFG.");
+
+    const url = base + "/bx"; // padrão
     const resp = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(params || {}),
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ pass: C.PASS || "", method, params: params || {} }),
     });
-    const txt = await resp.text();
-    if (!resp.ok) {
-      throw new Error(`HTTP ${resp.status} :: ${txt}`);
-    }
-    try {
-      return JSON.parse(txt);
-    } catch {
-      return txt;
-    }
+
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(`Worker HTTP ${resp.status}`);
+    if (data && data.error) throw new Error(data.error_description || data.error);
+
+    // aceita {result,next} ou {ok,result,next} ou {data:{...}}
+    if (Object.prototype.hasOwnProperty.call(data, "result")) return data;
+    if (data && data.data && Object.prototype.hasOwnProperty.call(data.data, "result")) return data.data;
+    return data;
   }
 
-  // ====== UI ======
-  function injectStyles() {
-    const css = `
-      :root{
-        --bg:#f5f7fb;
-        --card:#fff;
-        --border:rgba(25,30,45,.14);
-        --text:#121a28;
-        --muted:rgba(18,26,40,.60);
-        --radius:16px;
+  async function callWebhook(method, params) {
+    const hook = String(C.WEBHOOK_URL || C.WEBHOOK || "").trim();
+    if (!hook) throw new Error("WEBHOOK_URL não definido em window.EQUIPE17_CFG.");
+    const url = hook.replace(/\/?$/, "/") + method;
+
+    const body = new URLSearchParams();
+    const appendPairs = (prefix, obj) => {
+      if (obj == null) return;
+      if (Array.isArray(obj)) {
+        obj.forEach((v, i) => appendPairs(`${prefix}[${i}]`, v));
+        return;
       }
-      body{background:var(--bg); font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; color:var(--text);}
-      #eq17-wrap{max-width:1400px;margin:18px auto;padding:0 14px;}
-      #eq17-top{
-        background:var(--card);
-        border:1px solid var(--border);
-        border-radius:18px;
-        padding:14px 14px;
-        display:flex;align-items:center;justify-content:space-between;gap:12px;
+      if (typeof obj === "object") {
+        Object.keys(obj).forEach((k) => appendPairs(prefix ? `${prefix}[${k}]` : k, obj[k]));
+        return;
       }
-      #eq17-title{font-weight:900}
-      #eq17-sub{font-size:12px;color:var(--muted);margin-top:2px}
-      #eq17-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-      .btn{
-        border:1px solid var(--border);
-        background:#fff;
-        border-radius:999px;
-        padding:8px 12px;
-        font-weight:800;
-        cursor:pointer;
+      if (prefix) body.append(prefix, String(obj));
+    };
+    appendPairs("", params || {});
+
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded; charset=UTF-8" },
+      body,
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(`Webhook HTTP ${resp.status}`);
+    if (data && data.error) throw new Error(data.error_description || data.error);
+    return data;
+  }
+
+  async function bxRaw(method, params) {
+    // prioridade: Worker -> Webhook
+    if (C.WORKER_BASE) return await callWorker(method, params);
+    return await callWebhook(method, params);
+  }
+
+  async function bx(method, params) {
+    const data = await bxRaw(method, params);
+    return data.result;
+  }
+
+  async function bxAll(method, params) {
+    const out = [];
+    let start = 0;
+    while (true) {
+      const data = await bxRaw(method, Object.assign({}, params || {}, { start }));
+      const chunk = data.result || [];
+      out.push(...chunk);
+      if (data.next == null) break;
+      start = data.next;
+    }
+    return out;
+  }
+
+  // ===== UI =====
+  const root = ensureRoot();
+
+  root.innerHTML = `
+    <style>
+      #eqo-app{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;color:#111827; background:#f6f7fb; min-height:100vh; padding:14px;}
+      #eqo-app *{box-sizing:border-box;}
+      .eqo-shell{max-width:1400px;margin:0 auto;}
+      .eqo-top{
+        display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+        background:#fff;border:1px solid rgba(0,0,0,.08);border-radius:16px;padding:12px 14px;
       }
-      .btn:hover{filter:brightness(.98)}
-      .pill{
-        border:1px solid var(--border);
-        background:#fff;
-        border-radius:999px;
-        padding:8px 12px;
-        font-weight:800;
-        font-size:12px;
+      .eqo-left{display:flex;align-items:center;gap:10px;min-width:280px;}
+      .eqo-logo{width:34px;height:34px;border-radius:10px;border:1px solid rgba(0,0,0,.10);background:#fff;object-fit:contain;padding:6px;display:${C.LOGO_URL ? "block" : "none"};}
+      .eqo-title{font-weight:950;font-size:16px;line-height:1.1}
+      .eqo-sub{font-size:12px;color:rgba(17,24,39,.65);font-weight:800;margin-top:2px}
+      .eqo-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;}
+      .eqo-search{width:min(340px, 70vw); padding:10px 12px; border-radius:999px; border:1px solid rgba(0,0,0,.10); background:#fff; font-size:13px; font-weight:800; outline:none;}
+      .eqo-btn{
+        padding:9px 12px;border-radius:999px;border:1px solid rgba(0,0,0,.12);
+        background:#fff;font-weight:950;font-size:12px;cursor:pointer;
       }
-      #eq17-search{
-        border:1px solid var(--border);
-        border-radius:999px;
-        padding:8px 12px;
-        outline:none;
-        min-width:240px;
-        font-weight:700;
+      .eqo-btn:active{transform:scale(.99)}
+      .eqo-pill{
+        padding:9px 12px;border-radius:999px;border:1px solid rgba(0,0,0,.10);
+        background:#fff;font-weight:950;font-size:12px;white-space:nowrap;
       }
-      #eq17-grid{
+      .eqo-grid{
         margin-top:12px;
-        display:grid;
-        grid-template-columns: repeat(4, 1fr);
+        display:grid;grid-template-columns:repeat(4, minmax(280px, 1fr));
         gap:12px;
       }
-      @media (max-width: 1200px){ #eq17-grid{grid-template-columns: repeat(2, 1fr);} }
-      @media (max-width: 720px){ #eq17-grid{grid-template-columns: 1fr;} #eq17-search{min-width:160px;} }
-      .col{
-        background:var(--card);
-        border:1px solid var(--border);
-        border-radius:18px;
-        overflow:hidden;
-        min-height:60vh;
-        display:flex;flex-direction:column;
+      @media(max-width:1200px){ .eqo-grid{grid-template-columns:1fr;} }
+      .eqo-col{
+        background:#fff;border:1px solid rgba(0,0,0,.08);border-radius:16px;overflow:hidden;
+        min-height:72vh;display:flex;flex-direction:column;
       }
-      .colhead{
-        padding:10px 12px;
-        display:flex;align-items:center;justify-content:space-between;gap:8px;
-        border-bottom:1px solid rgba(25,30,45,.08);
-        font-weight:900;
+      .eqo-colHead{
+        padding:10px 12px;border-bottom:1px solid rgba(0,0,0,.08);
+        display:flex;align-items:center;justify-content:space-between;gap:10px;
+        font-weight:950;
       }
-      .colcount{font-size:12px;color:var(--muted);font-weight:900}
-      .colbody{
-        padding:10px;
-        overflow:auto;
-        max-height:72vh;
+      .eqo-colName{font-size:14px}
+      .eqo-colCount{font-size:12px;color:rgba(17,24,39,.55);font-weight:900}
+      .eqo-list{padding:10px;display:flex;flex-direction:column;gap:10px;overflow:auto;min-height:0;flex:1}
+      .eqo-card{
+        border:1px solid rgba(0,0,0,.10);border-radius:14px;padding:10px;background:#fff;
       }
-      .card{
-        background:#fff;
-        border:1px solid rgba(25,30,45,.12);
-        border-radius:16px;
-        padding:10px;
-        margin-bottom:10px;
-        box-shadow:0 1px 0 rgba(0,0,0,.02);
+      .eqo-task{font-weight:950;font-size:13px;line-height:1.15}
+      .eqo-meta{margin-top:6px;color:rgba(17,24,39,.60);font-size:12px;font-weight:850}
+      .eqo-row{margin-top:8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+      .eqo-select{
+        border:1px solid rgba(0,0,0,.12);border-radius:999px;padding:8px 10px;
+        font-weight:950;font-size:12px;background:#fff;min-width:160px;
       }
-      .ctitle{font-weight:900;font-size:13px;margin-bottom:6px;line-height:1.25}
-      .cmeta{font-size:12px;color:var(--muted);font-weight:800}
-      .row{display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap}
-      select{
-        border:1px solid rgba(25,30,45,.16);
-        border-radius:999px;
-        padding:6px 10px;
-        font-weight:800;
-        background:#fff;
+      .eqo-copy{
+        border:1px solid rgba(0,0,0,.12);border-radius:999px;padding:8px 10px;
+        font-weight:950;font-size:12px;background:#fff;cursor:pointer;
       }
-      .smallbtn{
-        border:1px solid rgba(25,30,45,.16);
-        background:#fff;
-        border-radius:999px;
-        padding:6px 10px;
-        font-weight:900;
-        cursor:pointer;
+      .eqo-empty{
+        border:1px dashed rgba(0,0,0,.18);border-radius:14px;padding:12px;
+        background:#fafafa;color:rgba(17,24,39,.55);font-weight:900;font-size:12px;text-align:center;
       }
-      .smallbtn:hover{filter:brightness(.98)}
-      #eq17-log{
-        margin-top:10px;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-        font-size:12px;
-        background:#0b1020;
-        color:#e7ecff;
-        border-radius:14px;
-        padding:10px 12px;
-        border:1px solid rgba(255,255,255,.12);
-        white-space:pre-wrap;
+      .eqo-log{
+        margin-top:12px;
+        background:#0b1220;border-radius:14px;border:1px solid rgba(255,255,255,.06);
+        color:#dbeafe;padding:12px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+        font-size:12px;min-height:110px;
       }
-    `;
-    document.head.appendChild(el("style", {}, [css]));
+      .eqo-logLine{opacity:.92;margin:2px 0}
+      .eqo-ok{color:#86efac;font-weight:900}
+      .eqo-bad{color:#fca5a5;font-weight:900}
+    </style>
+
+    <div id="eqo-app">
+      <div class="eqo-shell">
+        <div class="eqo-top">
+          <div class="eqo-left">
+            <img class="eqo-logo" src="${esc(C.LOGO_URL)}" alt="logo" referrerpolicy="no-referrer">
+            <div>
+              <div class="eqo-title">${esc(C.TITLE)}</div>
+              <div class="eqo-sub">${esc(C.SUBTITLE)}</div>
+            </div>
+          </div>
+
+          <div class="eqo-right">
+            <input id="eqo-q" class="eqo-search" placeholder="Buscar por título ou ID..." />
+            <button id="eqo-refresh" class="eqo-btn">Atualizar</button>
+            <button id="eqo-test" class="eqo-btn">Testar conexão</button>
+            <div id="eqo-pillDeals" class="eqo-pill">Negócios: —</div>
+            <div id="eqo-pillStages" class="eqo-pill">Etapas: —</div>
+          </div>
+        </div>
+
+        <div id="eqo-grid" class="eqo-grid"></div>
+
+        <div id="eqo-log" class="eqo-log"></div>
+      </div>
+    </div>
+  `;
+
+  const $ = (id) => document.getElementById(id);
+  const grid = $("eqo-grid");
+  const logEl = $("eqo-log");
+  const pillDeals = $("eqo-pillDeals");
+  const pillStages = $("eqo-pillStages");
+  const qInput = $("eqo-q");
+
+  function log(msg, kind) {
+    const line = document.createElement("div");
+    line.className = "eqo-logLine";
+    const tag =
+      kind === "ok" ? `<span class="eqo-ok">OK</span>` :
+      kind === "bad" ? `<span class="eqo-bad">ERRO</span>` : "(log)";
+    line.innerHTML = `${tag} ${esc(nowHHMMSS())} — ${esc(msg)}`;
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
   }
 
-  function mountRoot() {
-    document.body.innerHTML = "";
-    injectStyles();
-
-    const wrap = el("div", { id: "eq17-wrap" });
-
-    const left = el("div", {}, [
-      el("div", { id: "eq17-title" }, [CFG.TITLE]),
-      el("div", { id: "eq17-sub" }, ["Bitrix Sites — Cloudflare Worker (sem CORS)"]),
-    ]);
-
-    const search = el("input", {
-      id: "eq17-search",
-      placeholder: "Buscar por título ou ID...",
-      value: "",
-    });
-
-    const btnRefresh = el("button", { class: "btn", onclick: () => loadAll() }, ["Atualizar"]);
-    const btnTest = el("button", { class: "btn", onclick: () => testConn() }, ["Testar conexão"]);
-
-    const pillDeals = el("div", { class: "pill", id: "pillDeals" }, ["Negócios: ..."]);
-    const pillStages = el("div", { class: "pill", id: "pillStages" }, ["Etapas: ..."]);
-
-    const actions = el("div", { id: "eq17-actions" }, [search, btnRefresh, btnTest, pillDeals, pillStages]);
-
-    const top = el("div", { id: "eq17-top" }, [left, actions]);
-
-    const grid = el("div", { id: "eq17-grid" });
-
-    const log = el("div", { id: "eq17-log" }, ["(log)\n"]);
-
-    wrap.appendChild(top);
-    wrap.appendChild(grid);
-    wrap.appendChild(log);
-    document.body.appendChild(wrap);
-
-    return { grid, search, log, pillDeals, pillStages };
+  function copy(text) {
+    const t = String(text || "");
+    if (!t) return;
+    navigator.clipboard?.writeText(t).catch(() => {});
   }
 
-  // ====== Data ======
-  let UI;
-  let STAGES = []; // [{STATUS_ID, NAME}]
-  let STAGE_NAME = new Map(); // STATUS_ID -> NAME
-  let DEALS = []; // [{ID,TITLE,STAGE_ID,ASSIGNED_BY_ID}]
-
-  function logLine(s) {
-    UI.log.textContent = `${UI.log.textContent}${s}\n`;
-    UI.log.scrollTop = UI.log.scrollHeight;
-  }
-
-  async function testConn() {
-    try {
-      UI.log.textContent = "(log)\n";
-      logLine("Testando Worker + Bitrix...");
-      const r = await bx("user.get", { order: { ID: "ASC" }, filter: { ACTIVE: true }, select: ["ID", "NAME"] });
-      logLine(`OK: user.get retornou ${Array.isArray(r.result) ? r.result.length : "?"} usuários`);
-    } catch (e) {
-      logLine(`ERRO: ${e.message}`);
-      alert("Falha no teste. Veja o log.");
-    }
-  }
+  // ===== Data caches =====
+  let stageList = [];
+  let stageById = new Map();
+  let doneStageId = null;
+  let stageIdToAssistKey = new Map(); // stageId -> assistKey
+  let dealsAll = [];
 
   async function loadStages() {
-    // Bitrix: crm.dealcategory.stage.list
-    const r = await bx("crm.dealcategory.stage.list", {
-      id: CFG.CATEGORY_ID,
-    });
+    log("Carregando etapas…");
+    stageList = await bx("crm.dealcategory.stage.list", { id: Number(C.CATEGORY) });
+    stageById = new Map((stageList || []).map((s) => [String(s.STATUS_ID), s]));
+    doneStageId = null;
 
-    const list = (r && r.result) || [];
-    STAGES = list.map((x) => ({
-      STATUS_ID: x.STATUS_ID || x.ID || x.statusId || x.StatusId,
-      NAME: x.NAME || x.name || "",
-      SORT: Number(x.SORT || 0),
-    })).filter(x => x.STATUS_ID);
-
-    STAGES.sort((a, b) => (a.SORT - b.SORT));
-    STAGE_NAME = new Map(STAGES.map(s => [s.STATUS_ID, s.NAME]));
-    UI.pillStages.textContent = `Etapas: ${STAGES.length}`;
-  }
-
-  async function loadDealsPaged() {
-    DEALS = [];
-    let start = 0;
-
-    while (DEALS.length < CFG.MAX_TOTAL) {
-      const r = await bx("crm.deal.list", {
-        order: { ID: "DESC" },                 // <- tem que ser OBJETO (array no erro anterior vinha do proxy)
-        filter: { CATEGORY_ID: CFG.CATEGORY_ID },
-        select: ["ID", "TITLE", "STAGE_ID", "ASSIGNED_BY_ID"],
-        start,
-      });
-
-      const chunk = (r && r.result) || [];
-      DEALS.push(...chunk);
-
-      // Bitrix costuma retornar "next" para paginação
-      const next = (r && (r.next ?? (r.result && r.result.next))) || r.next;
-      if (!chunk.length || next == null) break;
-
-      start = next;
-      if (chunk.length < CFG.PAGE_SIZE) break;
-
-      await sleep(100); // pequena folga
+    for (const s of stageList || []) {
+      if (norm(s.NAME).includes(norm(C.DONE_STAGE_NAME))) doneStageId = String(s.STATUS_ID);
     }
 
-    UI.pillDeals.textContent = `Negócios: ${DEALS.length}`;
+    // mapear stage -> assistente pelo nome da coluna
+    stageIdToAssistKey = new Map();
+    const members = (C.ASSISTENTES || []).map((a) => String(a.key || a.name || "").trim()).filter(Boolean);
+
+    for (const s of stageList || []) {
+      const sn = norm(s.NAME);
+      for (const m of members) {
+        const mn = norm(m);
+        if (!mn) continue;
+        if (sn === mn || sn.includes(mn) || mn.includes(sn)) {
+          stageIdToAssistKey.set(String(s.STATUS_ID), m);
+        }
+      }
+    }
+
+    pillStages.textContent = `Etapas: ${(stageList || []).length}`;
+    log("Etapas carregadas.", "ok");
+  }
+
+  async function loadDeals() {
+    log("Carregando negócios…");
+
+    const select = ["ID", "TITLE", "STAGE_ID"];
+    dealsAll = await bxAll("crm.deal.list", {
+      filter: { CATEGORY_ID: Number(C.CATEGORY) },
+      select,
+      order: { ID: "DESC" },
+    });
+
+    // remove concluído da visão (como no print)
+    if (doneStageId) {
+      dealsAll = dealsAll.filter((d) => String(d.STAGE_ID) !== String(doneStageId));
+    }
+
+    pillDeals.textContent = `Negócios: ${dealsAll.length}`;
+    log("Negócios carregados.", "ok");
+  }
+
+  function buildMoveOptions(curStageId) {
+    const opts = [];
+
+    // Assistentes (por coluna)
+    for (const a of C.ASSISTENTES || []) {
+      const key = String(a.key || a.name || "").trim();
+      if (!key) continue;
+
+      // achar o STAGE_ID que corresponde à coluna desse assistente
+      const stage = (stageList || []).find((s) => norm(s.NAME) === norm(key) || norm(s.NAME).includes(norm(key)));
+      if (!stage) continue;
+
+      const sid = String(stage.STATUS_ID);
+      opts.push(`<option value="${esc(sid)}" ${sid === String(curStageId) ? "selected" : ""}>${esc(key)}</option>`);
+    }
+
+    // Concluído
+    if (doneStageId) {
+      opts.push(`<option value="${esc(doneStageId)}">${esc(C.DONE_STAGE_NAME)}</option>`);
+    }
+
+    return opts.join("");
+  }
+
+  function dealMatchesQuery(d, q) {
+    if (!q) return true;
+    const id = String(d.ID || "");
+    const title = String(d.TITLE || "");
+    const nq = norm(q);
+    return norm(id).includes(nq) || norm(title).includes(nq);
   }
 
   function render() {
-    UI.grid.innerHTML = "";
+    const q = String(qInput.value || "").trim();
 
-    const q = (UI.search.value || "").trim().toLowerCase();
-
-    const filtered = q
-      ? DEALS.filter(d => String(d.ID).includes(q) || String(d.TITLE || "").toLowerCase().includes(q))
-      : DEALS;
-
-    // agrupa por ASSIGNED_BY_ID
-    const byUser = new Map();
-    for (const u of CFG.USERS) byUser.set(String(u.id), []);
-    for (const d of filtered) {
-      const k = String(d.ASSIGNED_BY_ID || "");
-      if (byUser.has(k)) byUser.get(k).push(d);
+    const byAssist = new Map();
+    for (const a of C.ASSISTENTES || []) {
+      const key = String(a.key || a.name || "").trim();
+      if (key) byAssist.set(key, []);
     }
 
-    for (const u of CFG.USERS) {
-      const items = byUser.get(String(u.id)) || [];
-      const col = el("div", { class: "col" });
-      const head = el("div", { class: "colhead" }, [
-        el("div", {}, [`${u.name} (${u.id})`]),
-        el("div", { class: "colcount" }, [String(items.length)]),
-      ]);
-      const body = el("div", { class: "colbody" });
+    for (const d of dealsAll || []) {
+      if (!dealMatchesQuery(d, q)) continue;
+      const ak = stageIdToAssistKey.get(String(d.STAGE_ID)) || null;
+      if (ak && byAssist.has(ak)) byAssist.get(ak).push(d);
+    }
 
-      for (const d of items.slice(0, 200)) {
-        const stageName = STAGE_NAME.get(d.STAGE_ID) || d.STAGE_ID;
+    grid.innerHTML = "";
 
-        const sel = el("select");
-        for (const s of STAGES) {
-          const opt = el("option", { value: s.STATUS_ID }, [s.NAME || s.STATUS_ID]);
-          if (s.STATUS_ID === d.STAGE_ID) opt.selected = true;
-          sel.appendChild(opt);
+    for (const a of C.ASSISTENTES || []) {
+      const key = String(a.key || a.name || "").trim();
+      if (!key) continue;
+
+      const list = byAssist.get(key) || [];
+      const col = document.createElement("section");
+      col.className = "eqo-col";
+      col.innerHTML = `
+        <div class="eqo-colHead">
+          <div class="eqo-colName">${esc(key)} (${esc(a.userId || "")})</div>
+          <div class="eqo-colCount">${list.length}</div>
+        </div>
+        <div class="eqo-list" data-col="${esc(key)}"></div>
+      `;
+      const listEl = col.querySelector(".eqo-list");
+
+      if (!list.length) {
+        listEl.innerHTML = `<div class="eqo-empty">Sem itens</div>`;
+      } else {
+        for (const d of list) {
+          const st = stageById.get(String(d.STAGE_ID));
+          const stName = st ? String(st.NAME || "") : "";
+
+          const card = document.createElement("div");
+          card.className = "eqo-card";
+          card.innerHTML = `
+            <div class="eqo-task">${esc(d.TITLE || "")}</div>
+            <div class="eqo-meta">ID ${esc(d.ID)} • Etapa: ${esc(stName || key)}</div>
+
+            <div class="eqo-row">
+              <select class="eqo-select" data-act="move" data-id="${esc(d.ID)}">
+                ${buildMoveOptions(d.STAGE_ID)}
+              </select>
+              <button class="eqo-copy" data-act="copy" data-id="${esc(d.ID)}">Copiar ID</button>
+            </div>
+          `;
+          listEl.appendChild(card);
         }
-
-        sel.addEventListener("change", async () => {
-          const newStage = sel.value;
-          const old = d.STAGE_ID;
-          sel.disabled = true;
-          try {
-            await bx("crm.deal.update", {
-              id: Number(d.ID),
-              fields: { STAGE_ID: newStage },
-            });
-            d.STAGE_ID = newStage;
-          } catch (e) {
-            sel.value = old;
-            alert(`Erro ao mover etapa: ${e.message}`);
-          } finally {
-            sel.disabled = false;
-          }
-        });
-
-        const btnCopy = el("button", {
-          class: "smallbtn",
-          onclick: async () => {
-            try {
-              await navigator.clipboard.writeText(String(d.ID));
-            } catch (_) {
-              // fallback
-              const ta = el("textarea", { style: { position: "fixed", left: "-9999px" } }, [String(d.ID)]);
-              document.body.appendChild(ta);
-              ta.select();
-              document.execCommand("copy");
-              ta.remove();
-            }
-          }
-        }, ["Copiar ID"]);
-
-        const card = el("div", { class: "card" }, [
-          el("div", { class: "ctitle" }, [String(d.TITLE || "(sem título)")]),
-          el("div", { class: "cmeta" }, [`ID ${d.ID} • Etapa: ${stageName}`]),
-          el("div", { class: "row" }, [sel, btnCopy]),
-        ]);
-        body.appendChild(card);
       }
 
-      col.appendChild(head);
-      col.appendChild(body);
-      UI.grid.appendChild(col);
+      grid.appendChild(col);
     }
   }
 
-  async function loadAll() {
+  async function moveDeal(dealId, newStageId) {
+    await bx("crm.deal.update", { id: String(dealId), fields: { STAGE_ID: String(newStageId) } });
+
+    // Atualiza local sem repuxar tudo
+    const d = (dealsAll || []).find((x) => String(x.ID) === String(dealId));
+    if (d) d.STAGE_ID = String(newStageId);
+
+    // se foi pra concluído, remove da visão
+    if (doneStageId && String(newStageId) === String(doneStageId)) {
+      dealsAll = dealsAll.filter((x) => String(x.ID) !== String(dealId));
+      pillDeals.textContent = `Negócios: ${dealsAll.length}`;
+    }
+  }
+
+  // Delegation
+  root.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-act]");
+    if (!btn) return;
+    const act = btn.getAttribute("data-act");
+    const id = btn.getAttribute("data-id");
+
+    if (act === "copy") {
+      copy(id);
+      log(`ID copiado: ${id}`, "ok");
+    }
+  });
+
+  root.addEventListener("change", (e) => {
+    const sel = e.target.closest('select[data-act="move"]');
+    if (!sel) return;
+    const id = sel.getAttribute("data-id");
+    const to = sel.value;
+
+    (async () => {
+      try {
+        log(`Movendo ID ${id}…`);
+        await moveDeal(id, to);
+        log(`Movido ID ${id}.`, "ok");
+        render();
+      } catch (err) {
+        log(`Falha ao mover ID ${id}: ${err?.message || err}`, "bad");
+      }
+    })();
+  });
+
+  // Topbar
+  $("eqo-refresh").addEventListener("click", async () => {
     try {
-      UI.log.textContent = "(log)\n";
-      logLine("Carregando etapas...");
+      log("Atualizando…");
       await loadStages();
-      logLine("Carregando negócios...");
-      await loadDealsPaged();
-      logLine("Renderizando...");
+      await loadDeals();
       render();
-      logLine("OK ✅");
-    } catch (e) {
-      logLine(`ERRO: ${e.message}`);
-      alert("Falha ao carregar o painel. Veja o log.");
+      log("Renderizando…", "ok");
+    } catch (err) {
+      log(`Falha ao atualizar: ${err?.message || err}`, "bad");
     }
-  }
+  });
 
-  // ====== Boot ======
-  UI = mountRoot();
-  UI.search.addEventListener("input", () => render());
-  loadAll();
+  $("eqo-test").addEventListener("click", async () => {
+    try {
+      log("Testando conexão…");
+      // chamada leve
+      await bx("profile", {});
+      log("Conexão OK.", "ok");
+    } catch (err) {
+      log(`Falha na conexão: ${err?.message || err}`, "bad");
+    }
+  });
+
+  qInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      render();
+    }
+  });
+  qInput.addEventListener("input", () => {
+    // filtra ao digitar (leve)
+    render();
+  });
+
+  // Init
+  (async () => {
+    log("Iniciando…");
+    // sanity
+    if (!C.CATEGORY) throw new Error("CATEGORY não definido.");
+    if (!Array.isArray(C.ASSISTENTES) || !C.ASSISTENTES.length) {
+      throw new Error("ASSISTENTES vazio. Defina em window.EQUIPE17_CFG.ASSISTENTES.");
+    }
+
+    await loadStages();
+    await loadDeals();
+    render();
+
+    log("OK", "ok");
+
+    setInterval(async () => {
+      try {
+        await loadDeals();
+        render();
+      } catch (_) {}
+    }, Math.max(15000, Number(C.REFRESH_MS || 60000)));
+  })().catch((err) => {
+    log(`Falha fatal: ${err?.message || err}`, "bad");
+  });
 })();
