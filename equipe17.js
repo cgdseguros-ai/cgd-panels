@@ -1,9 +1,7 @@
 /* eqd.js — GET • CGD CORRETORA (ATUALIZAÇÃO)
-   ✅ Ajustes solicitados (cards users, busca admin-only, multi seleção com volta, painel individual só do dia, OBS clicável)
-   ✅ Integração LEADS (best-effort): lista + mover etapas + alerta (bips) + coluna leads no painel individual de vendedoras
-   ⚠️ IMPORTANTE: campos personalizados de LEAD (OPERADORA/IDADE/BAIRRO) não vieram com IDs UF_*.
-      Por padrão, eu mostro o que o Bitrix costuma ter (TITLE/NAME/SOURCE_ID/DATE_CREATE/STATUS_ID + UF_ se existirem).
-      Se você me mandar os 3 UF_CRM_… de OPERADORA, IDADE, BAIRRO, eu amarro 100%.
+   ✅ LEADS: UF_CRM mapeados (Operadora/Idade/Telefone/Bairro/Fonte/DataHora)
+   ✅ Card USER: foto +30% e CENTRAL; nome/equipe à ESQUERDA; stats à DIREITA
+   ✅ Calendário: grade do mês (estilo antigo) com navegação de meses + seleção de dia
 */
 
 (function () {
@@ -44,9 +42,7 @@
   ];
 
   // Users com painel especial (leads)
-  const LEAD_USERS = new Set([
-    "15", "19", "17", "23", "811", "3081", "3079", "3083", "3085", "3389"
-  ]);
+  const LEAD_USERS = new Set(["15", "19", "17", "23", "811", "3081", "3079", "3083", "3085", "3389"]);
 
   // UF Deals
   const UF_URGENCIA = "UF_CRM_1768174982";
@@ -57,11 +53,13 @@
   const UF_OBS = "UF_CRM_691385BE7D33D";
   const DONE_STAGE_NAME = "CONCLUÍDO";
 
-  // LEADS: tente mapear seus campos aqui se quiser 100% (opcional)
-  // Ex.: const LEAD_UF_OPERADORA="UF_CRM_...."; etc.
-  const LEAD_UF_OPERADORA = ""; // <-- se você me der, eu amarro
-  const LEAD_UF_IDADE = "";
-  const LEAD_UF_BAIRRO = "";
+  // ✅ LEADS — campos do seu Bitrix
+  const LEAD_UF_OPERADORA = "UF_CRM_1771282782";
+  const LEAD_UF_IDADE = "UF_CRM_1771339221";
+  const LEAD_UF_TELEFONE = "UF_CRM_1771282207";
+  const LEAD_UF_BAIRRO = "UF_CRM_LEAD_1731909705398";
+  const LEAD_UF_FONTE = "UF_CRM_1767285733843";
+  const LEAD_UF_DATAHORA = "UF_CRM_1771333014";
 
   // =========================
   // 2) BOOTSTRAP / CSS
@@ -98,7 +96,7 @@
         <div style="padding:14px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial">
           <div style="font-weight:950;font-size:14px;margin-bottom:8px">Falha ao carregar o painel</div>
           <pre style="white-space:pre-wrap;background:#fff;border:1px solid rgba(0,0,0,.12);border-radius:12px;padding:12px;max-width:1100px;overflow:auto">${String(
-            err && (err.stack || err.message || err) || err
+            (err && (err.stack || err.message || err)) || err
           )}</pre>
           <div style="font-size:12px;opacity:.7;margin-top:8px">Abra o console (F12) para mais detalhes.</div>
         </div>
@@ -152,7 +150,6 @@
     .eqd-searchWrap{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end;}
     .eqd-searchInput{width:min(340px,54vw);border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.10);border-radius:999px;padding:9px 12px;font-size:12px;font-weight:900;outline:none;color:#fff;}
     .eqd-searchSelect{border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.10);border-radius:999px;padding:8px 10px;font-size:12px;font-weight:950;outline:none;min-width:170px;color:#fff;}
-    /* ✅ fix: option (lista) com letras pretas */
     .eqd-searchSelect option{color:#111;background:#fff;}
 
     #eqd-app.eqd-dark{
@@ -168,7 +165,7 @@
     @media (max-width:1200px){.userGrid{grid-template-columns:repeat(2,minmax(220px,1fr));}}
     @media (max-width:720px){.userGrid{grid-template-columns:1fr;}}
 
-    /* ✅ CARD DO USUÁRIO (foto maior, esquerda, stats direita vertical) */
+    /* ✅ CARD DO USUÁRIO: nome/equipe à esquerda, FOTO CENTRAL (+30%), stats à direita */
     .userCard{
       border:1px solid rgba(30,40,70,.12);
       border-radius:18px;
@@ -180,20 +177,24 @@
       display:flex;gap:12px;align-items:center;
     }
     .userCard:hover{transform:translateY(-1px);box-shadow:0 10px 22px rgba(20,25,35,.10);}
-    .userLeft{display:flex;flex-direction:column;align-items:flex-start;gap:6px;min-width:120px;}
+
+    .userInfoLeft{display:flex;flex-direction:column;gap:6px;min-width:130px;}
+    .userName{font-weight:950;font-size:14px;text-transform:uppercase;}
+    .userTeam{font-size:11px;font-weight:900;opacity:.70;margin-top:-4px;}
+
+    .userPhotoWrap{flex:0 0 auto;display:flex;align-items:center;justify-content:center;}
     .userPhoto{
-      width:78px;height:78px;border-radius:999px;
+      width:102px;height:102px;border-radius:999px;
       border:1px solid rgba(30,40,70,.14);
       background:rgba(255,255,255,.92);
       object-fit:cover;
     }
-    .userName{font-weight:950;font-size:14px;text-transform:uppercase;}
-    .userTeam{font-size:11px;font-weight:900;opacity:.70;margin-top:-4px;}
+
     .userRight{margin-left:auto;display:flex;flex-direction:column;gap:6px;align-items:flex-end;}
     .userEmoji{font-size:18px;}
     .userLine{font-size:11px;font-weight:950;opacity:.90}
 
-    /* ✅ modo escuro: card user off-white com letras pretas */
+    /* modo escuro: card user off-white com letras pretas */
     #eqd-app.eqd-dark .userCard{background:#f3f1eb;border-color:rgba(0,0,0,.12);color:#111;}
     #eqd-app.eqd-dark .userName, #eqd-app.eqd-dark .userTeam, #eqd-app.eqd-dark .userLine{color:#111;}
     #eqd-app.eqd-dark .userPhoto{background:#fff;border-color:rgba(0,0,0,.12);}
@@ -213,7 +214,6 @@
     .panelUserTeam{font-size:11px;font-weight:900;opacity:.70;margin-top:2px;}
 
     .panelTools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:flex-end;flex:1 1 auto;}
-    /* ✅ botões visíveis no modo claro (cinza bem escuro) */
     #eqd-app:not(.eqd-dark) .panelTools .eqd-btn{
       background:#1b1e24;border-color:#1b1e24;color:#fff;
     }
@@ -233,7 +233,6 @@
       display:flex;flex-direction:column;
     }
     #eqd-app.eqd-dark .panelCol{background:rgba(255,255,255,.06);}
-    /* ✅ remove nome/número da coluna => header vazio (mantém borda) */
     .panelColHead{padding:8px 12px;border-bottom:1px solid var(--border);font-weight:950;font-size:12px;opacity:.0;height:10px;}
     .panelColBody{padding:10px;display:flex;flex-direction:column;gap:8px;overflow:auto;}
 
@@ -281,12 +280,36 @@
     .leadBtnD{background:rgba(255,70,90,.14);border-color:rgba(255,70,90,.30)}
     .blink{animation:blink1 .95s ease-in-out infinite}
     @keyframes blink1{0%,100%{opacity:1}50%{opacity:.35}}
+
+    /* ✅ CALENDÁRIO (grade mês) */
+    .calWrap{display:flex;flex-direction:column;gap:10px}
+    .calHead{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+    .calTitle{font-weight:950}
+    .calNav{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+    .calGrid{display:grid;grid-template-columns:repeat(7, minmax(0,1fr));gap:8px}
+    .calDow{font-size:11px;font-weight:950;opacity:.75;text-align:center}
+    .calCell{
+      border:1px solid rgba(30,40,70,.14);
+      border-radius:12px;
+      padding:10px 0;
+      text-align:center;
+      font-weight:950;
+      cursor:pointer;
+      background:rgba(255,255,255,.70);
+      user-select:none;
+    }
+    #eqd-app.eqd-dark .calCell{background:rgba(255,255,255,.10);border-color:rgba(255,255,255,.14)}
+    .calCell.off{opacity:.35}
+    .calCell.today{box-shadow:0 0 0 2px rgba(22,163,74,.35) inset}
+    .calCell.sel{box-shadow:0 0 0 2px rgba(120,90,255,.55) inset}
   `);
 
   // =========================
   // 3) HELPERS / BX
   // =========================
-  function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+  function sleep(ms) {
+    return new Promise((r) => setTimeout(r, ms));
+  }
 
   function toPairs(prefix, obj, out) {
     out = out || [];
@@ -312,8 +335,11 @@
   async function fetchWithTimeout(url, options, timeoutMs) {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), timeoutMs);
-    try { return await fetch(url, { ...options, signal: ctrl.signal }); }
-    finally { clearTimeout(t); }
+    try {
+      return await fetch(url, { ...options, signal: ctrl.signal });
+    } finally {
+      clearTimeout(t);
+    }
   }
 
   let BX_QUEUE = Promise.resolve();
@@ -341,11 +367,15 @@
               await sleep(base + jitter);
             }
 
-            const resp = await fetchWithTimeout(PROXY_BASE + method, {
-              method: "POST",
-              headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
-              body,
-            }, 15000);
+            const resp = await fetchWithTimeout(
+              PROXY_BASE + method,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
+                body,
+              },
+              15000
+            );
 
             if ([429, 502, 503, 504].includes(resp.status)) {
               throw new Error(`HTTP ${resp.status} (temporário) em ${method}`);
@@ -428,8 +458,12 @@
     const yy = d.getFullYear();
     return `${dd}/${mm}/${yy}`;
   }
-  function dayStart(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0); }
-  function dayEnd(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999); }
+  function dayStart(d) {
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+  }
+  function dayEnd(d) {
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+  }
 
   function localInputToIsoWithOffset(v) {
     v = String(v || "").trim();
@@ -495,38 +529,60 @@
   }
 
   function sortDeals(deals) {
-    return (deals || []).slice().sort((a, b) => {
-      const ua = isUrgenteText(a._urgTxt) ? 0 : 1;
-      const ub = isUrgenteText(b._urgTxt) ? 0 : 1;
-      if (ua !== ub) return ua - ub;
+    return (deals || [])
+      .slice()
+      .sort((a, b) => {
+        const ua = isUrgenteText(a._urgTxt) ? 0 : 1;
+        const ub = isUrgenteText(b._urgTxt) ? 0 : 1;
+        if (ua !== ub) return ua - ub;
 
-      const la = a._late ? 0 : 1;
-      const lb = b._late ? 0 : 1;
-      if (la !== lb) return la - lb;
+        const la = a._late ? 0 : 1;
+        const lb = b._late ? 0 : 1;
+        if (la !== lb) return la - lb;
 
-      const pa = prazoMs(a), pb = prazoMs(b);
-      if (pa !== pb) return pa - pb;
+        const pa = prazoMs(a),
+          pb = prazoMs(b);
+        if (pa !== pb) return pa - pb;
 
-      return createdMs(a) - createdMs(b);
-    });
+        return createdMs(a) - createdMs(b);
+      });
   }
 
   function dealAccent(deal) {
     const seed = String(deal.ID || deal.TITLE || "Tarefa");
     let h = 2166136261;
-    for (let i = 0; i < seed.length; i++) { h ^= seed.charCodeAt(i); h = Math.imul(h, 16777619); }
+    for (let i = 0; i < seed.length; i++) {
+      h ^= seed.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
     const hue = (h >>> 0) % 360;
-    const s = 0.45, l = 0.55;
+    const s = 0.45,
+      l = 0.55;
     const c = (1 - Math.abs(2 * l - 1)) * s;
     const x = c * (1 - Math.abs((hue / 60) % 2 - 1));
     const m = l - c / 2;
-    let r = 0, g = 0, b = 0;
-    if (hue < 60) { r = c; g = x; }
-    else if (hue < 120) { r = x; g = c; }
-    else if (hue < 180) { g = c; b = x; }
-    else if (hue < 240) { g = x; b = c; }
-    else if (hue < 300) { r = x; b = c; }
-    else { r = c; b = x; }
+    let r = 0,
+      g = 0,
+      b = 0;
+    if (hue < 60) {
+      r = c;
+      g = x;
+    } else if (hue < 120) {
+      r = x;
+      g = c;
+    } else if (hue < 180) {
+      g = c;
+      b = x;
+    } else if (hue < 240) {
+      g = x;
+      b = c;
+    } else if (hue < 300) {
+      r = x;
+      b = c;
+    } else {
+      r = c;
+      b = x;
+    }
     return `${Math.round((r + m) * 255)},${Math.round((g + m) * 255)},${Math.round((b + m) * 255)}`;
   }
 
@@ -574,7 +630,10 @@
     if (STATE.enumCache.has(uf)) return STATE.enumCache.get(uf);
     const list = await bx("crm.deal.userfield.list", { filter: { FIELD_NAME: uf } });
     const f = Array.isArray(list) ? list[0] : null;
-    if (!f || !f.ID) { STATE.enumCache.set(uf, {}); return {}; }
+    if (!f || !f.ID) {
+      STATE.enumCache.set(uf, {});
+      return {};
+    }
     const d = await bx("crm.deal.userfield.get", { id: f.ID });
     const m = {};
     (d.LIST || []).forEach((e) => (m[String(e.ID)] = String(e.VALUE)));
@@ -703,10 +762,9 @@
   // 8) LEADS (STATUS) + ALERTA
   // =========================
   async function loadLeadStages() {
-    // crm.status.list ENTITY_ID=STATUS (stages de leads)
     const list = await bxAll("crm.status.list", { filter: { ENTITY_ID: "STATUS" } });
     const map = new Map();
-    (list || []).forEach(s => {
+    (list || []).forEach((s) => {
       if (!s || !s.STATUS_ID) return;
       map.set(norm(s.NAME), String(s.STATUS_ID));
     });
@@ -723,53 +781,63 @@
     return bestTitleFromText(t || n || `Lead ${lead.ID}`);
   }
 
+  // ✅ LEADS getters (100% amarrado)
   function leadOperadora(lead) {
-    if (LEAD_UF_OPERADORA && lead[LEAD_UF_OPERADORA]) return String(lead[LEAD_UF_OPERADORA]);
-    // fallback: tenta UF comum, se existir
-    const anyUF = Object.keys(lead || {}).find(k => /OPERAD/i.test(k));
-    return anyUF ? String(lead[anyUF] || "") : "";
+    return String((lead && lead[LEAD_UF_OPERADORA]) || "").trim();
   }
   function leadIdade(lead) {
-    if (LEAD_UF_IDADE && lead[LEAD_UF_IDADE]) return String(lead[LEAD_UF_IDADE]);
-    const anyUF = Object.keys(lead || {}).find(k => /IDADE/i.test(k));
-    return anyUF ? String(lead[anyUF] || "") : "";
+    return String((lead && lead[LEAD_UF_IDADE]) || "").trim();
+  }
+  function leadTelefone(lead) {
+    return String((lead && lead[LEAD_UF_TELEFONE]) || "").trim();
   }
   function leadBairro(lead) {
-    if (LEAD_UF_BAIRRO && lead[LEAD_UF_BAIRRO]) return String(lead[LEAD_UF_BAIRRO]);
-    // fallback: ADDRESS_CITY / ADDRESS_REGION
-    return String(lead.ADDRESS_CITY || lead.ADDRESS_REGION || lead.ADDRESS || "");
+    return String((lead && lead[LEAD_UF_BAIRRO]) || "").trim();
   }
-
   function leadFonte(lead) {
-    return String(lead.SOURCE_ID || "");
+    return String((lead && lead[LEAD_UF_FONTE]) || "").trim();
+  }
+  function leadDataHora(lead) {
+    return String((lead && lead[LEAD_UF_DATAHORA]) || lead.DATE_CREATE || "").trim();
   }
 
   async function loadLeadsForUsers() {
-    // stages usados
     const sAt = leadStageId("EM ATENDIMENTO");
     const sQual = leadStageId("QUALIFICADO");
     const sAtendido = leadStageId("ATENDIDO");
     const sPerdido = leadStageId("PERDIDO");
     const sConv = leadStageId("CONVERTIDO");
-    // se não achar, ainda lista por ASSIGNED e STATUS geral (sem filtro por status)
     const haveStages = !!(sAt && sQual && sAtendido);
 
+    // ✅ select com TODOS os UF necessários
     const select = [
-      "ID","TITLE","NAME","LAST_NAME","STATUS_ID","ASSIGNED_BY_ID","DATE_CREATE","DATE_MODIFY",
-      "SOURCE_ID","ADDRESS","ADDRESS_CITY","ADDRESS_REGION"
-    ];
-    if (LEAD_UF_OPERADORA) select.push(LEAD_UF_OPERADORA);
-    if (LEAD_UF_IDADE) select.push(LEAD_UF_IDADE);
-    if (LEAD_UF_BAIRRO) select.push(LEAD_UF_BAIRRO);
+      "ID",
+      "TITLE",
+      "NAME",
+      "LAST_NAME",
+      "STATUS_ID",
+      "ASSIGNED_BY_ID",
+      "DATE_CREATE",
+      "DATE_MODIFY",
+      "SOURCE_ID",
+      "ADDRESS",
+      "ADDRESS_CITY",
+      "ADDRESS_REGION",
+      LEAD_UF_OPERADORA,
+      LEAD_UF_IDADE,
+      LEAD_UF_TELEFONE,
+      LEAD_UF_BAIRRO,
+      LEAD_UF_FONTE,
+      LEAD_UF_DATAHORA,
+    ].filter(Boolean);
 
-    // puxa leads recentes (limita)
     const since = new Date(Date.now() - 1000 * 60 * 60 * 24 * 10).toISOString(); // 10 dias
     const baseFilter = { ">=DATE_CREATE": since };
 
     const leads = await bxAll("crm.lead.list", {
       filter: baseFilter,
       select,
-      order: { ID: "DESC" }
+      order: { ID: "DESC" },
     });
 
     STATE.leadsAll = leads || [];
@@ -777,25 +845,29 @@
 
     for (const u of USERS) {
       if (!LEAD_USERS.has(String(u.userId))) continue;
-      const arr = (leads || []).filter(l => String(l.ASSIGNED_BY_ID || "") === String(u.userId));
+      const arr = (leads || []).filter((l) => String(l.ASSIGNED_BY_ID || "") === String(u.userId));
       STATE.leadsByUser.set(String(u.userId), arr);
 
-      // alerta: EM ATENDIMENTO novos
-      const atList = haveStages ? arr.filter(l => String(l.STATUS_ID) === String(sAt)) : [];
+      const atList = haveStages ? arr.filter((l) => String(l.STATUS_ID) === String(sAt)) : [];
       const prev = STATE.leadsAtendimentoIdsByUser.get(String(u.userId)) || new Set();
-      const nowSet = new Set(atList.map(l => String(l.ID)));
+      const nowSet = new Set(atList.map((l) => String(l.ID)));
 
       let hasNew = false;
       for (const id of nowSet) {
-        if (!prev.has(id)) { hasNew = true; break; }
+        if (!prev.has(id)) {
+          hasNew = true;
+          break;
+        }
       }
 
-      // se tem novos em atendimento, dispara alerta até sair de ATENDIMENTO (ou até clicar LEADS)
       if (hasNew && nowSet.size) STATE.leadsAlertUsers.add(String(u.userId));
       if (!nowSet.size) STATE.leadsAlertUsers.delete(String(u.userId));
 
       STATE.leadsAtendimentoIdsByUser.set(String(u.userId), nowSet);
     }
+
+    // eslint-ignore (silenciar vars não usados neste escopo)
+    void sPerdido; void sConv;
   }
 
   function play3Beeps() {
@@ -808,17 +880,22 @@
         o.type = "sine";
         o.frequency.value = 880;
         g.gain.value = 0.0001;
-        o.connect(g); g.connect(ctx.destination);
+        o.connect(g);
+        g.connect(ctx.destination);
         o.start(t);
         g.gain.setValueAtTime(0.0001, t);
         g.gain.exponentialRampToValueAtTime(0.25, t + 0.01);
         g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
         o.stop(t + 0.14);
       };
-      beep(now + 0.00);
+      beep(now + 0.0);
       beep(now + 0.18);
       beep(now + 0.36);
-      setTimeout(() => { try { ctx.close(); } catch(_){} }, 900);
+      setTimeout(() => {
+        try {
+          ctx.close();
+        } catch (_) {}
+      }, 900);
     } catch (_) {}
   }
 
@@ -828,11 +905,14 @@
   const CACHE_KEY = "EQD_CACHE_V2";
   function saveCache() {
     try {
-      localStorage.setItem(CACHE_KEY, JSON.stringify({
-        at: Date.now(),
-        dealsAll: STATE.dealsAll,
-        leadsAll: STATE.leadsAll,
-      }));
+      localStorage.setItem(
+        CACHE_KEY,
+        JSON.stringify({
+          at: Date.now(),
+          dealsAll: STATE.dealsAll,
+          leadsAll: STATE.leadsAll,
+        })
+      );
     } catch (_) {}
   }
   function loadCache() {
@@ -844,15 +924,13 @@
       if (Array.isArray(j.dealsAll)) STATE.dealsAll = j.dealsAll;
       if (Array.isArray(j.leadsAll)) STATE.leadsAll = j.leadsAll;
       return true;
-    } catch (_) { return false; }
+    } catch (_) {
+      return false;
+    }
   }
 
   async function loadDeals() {
-    const [urgMap, tarefaMap, etapaMap] = await Promise.all([
-      enums(UF_URGENCIA),
-      enums(UF_TAREFA),
-      enums(UF_ETAPA),
-    ]);
+    const [urgMap, tarefaMap, etapaMap] = await Promise.all([enums(UF_URGENCIA), enums(UF_TAREFA), enums(UF_ETAPA)]);
 
     let colabIsEnum = false;
     let colabMap = {};
@@ -862,8 +940,18 @@
     } catch (_) {}
 
     const select = [
-      "ID", "TITLE", "STAGE_ID", "DATE_CREATE", "DATE_MODIFY", "ASSIGNED_BY_ID",
-      UF_TAREFA, UF_PRAZO, UF_URGENCIA, UF_ETAPA, UF_COLAB, UF_OBS,
+      "ID",
+      "TITLE",
+      "STAGE_ID",
+      "DATE_CREATE",
+      "DATE_MODIFY",
+      "ASSIGNED_BY_ID",
+      UF_TAREFA,
+      UF_PRAZO,
+      UF_URGENCIA,
+      UF_ETAPA,
+      UF_COLAB,
+      UF_OBS,
     ];
 
     const deals = await bxAll("crm.deal.list", {
@@ -970,11 +1058,15 @@
     if (on) el.app.classList.add("eqd-dark");
     else el.app.classList.remove("eqd-dark");
     el.darkToggle.textContent = on ? "Modo claro" : "Modo escuro";
-    try { localStorage.setItem(DARK_KEY, on ? "1" : "0"); } catch (_) {}
+    try {
+      localStorage.setItem(DARK_KEY, on ? "1" : "0");
+    } catch (_) {}
   }
   (function initDark() {
     let on = false;
-    try { on = localStorage.getItem(DARK_KEY) === "1"; } catch (_) {}
+    try {
+      on = localStorage.getItem(DARK_KEY) === "1";
+    } catch (_) {}
     applyDark(on);
   })();
   el.darkToggle.addEventListener("click", () => applyDark(!el.app.classList.contains("eqd-dark")));
@@ -994,19 +1086,32 @@
     el.modalBody.onclick = null;
   }
   el.modalClose.addEventListener("click", closeModal);
-  el.modalOverlay.addEventListener("click", (e) => { if (e.target === el.modalOverlay) closeModal(); });
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
+  el.modalOverlay.addEventListener("click", (e) => {
+    if (e.target === el.modalOverlay) closeModal();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeModal();
+  });
 
-  function setSoftStatus(msg) { el.status.textContent = msg || "JS: ok"; }
-  function setBusy(msg) { el.status.textContent = msg || "Executando…"; }
-  function clearBusy() { el.status.textContent = "JS: ok"; }
+  function setSoftStatus(msg) {
+    el.status.textContent = msg || "JS: ok";
+  }
+  function setBusy(msg) {
+    el.status.textContent = msg || "Executando…";
+  }
+  function clearBusy() {
+    el.status.textContent = "JS: ok";
+  }
 
   // =========================
   // 13) CLOCK
   // =========================
   function tickClock() {
     const d = new Date();
-    el.now.textContent = `${fmtDateOnly(d)} • ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}:${String(d.getSeconds()).padStart(2,"0")}`;
+    el.now.textContent = `${fmtDateOnly(d)} • ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(
+      2,
+      "0"
+    )}:${String(d.getSeconds()).padStart(2, "0")}`;
   }
   setInterval(tickClock, 1000);
   tickClock();
@@ -1016,8 +1121,7 @@
   // =========================
   function fillSearchScope() {
     el.searchScope.innerHTML =
-      `<option value="__ALL__">Busca geral</option>` +
-      USERS.map((u) => `<option value="${u.userId}">${escHtml(u.name)}</option>`).join("");
+      `<option value="__ALL__">Busca geral</option>` + USERS.map((u) => `<option value="${u.userId}">${escHtml(u.name)}</option>`).join("");
   }
   fillSearchScope();
 
@@ -1032,7 +1136,7 @@
   }
 
   function dealUserNameByAssigned(assignedId) {
-    const u = USERS.find(x => String(x.userId) === String(assignedId));
+    const u = USERS.find((x) => String(x.userId) === String(assignedId));
     return u ? u.name : `USER ${assignedId || "—"}`;
   }
 
@@ -1059,62 +1163,164 @@
     });
 
     const listHTML = hits.length
-      ? hits.map((d) => {
-          const who = dealUserNameByAssigned(d.ASSIGNED_BY_ID || d._assigned);
-          // ✅ busca geral mostra user do card
-          const whoLine = scope === "__ALL__"
-            ? `<div style="font-size:11px;font-weight:950;opacity:.80">USER: ${escHtml(who)}</div>`
-            : ``;
+      ? hits
+          .map((d) => {
+            const who = dealUserNameByAssigned(d.ASSIGNED_BY_ID || d._assigned);
+            const whoLine = scope === "__ALL__" ? `<div style="font-size:11px;font-weight:950;opacity:.80">USER: ${escHtml(who)}</div>` : ``;
 
-          // ✅ clicar no “card resultado” abre modal com card editável (mesmas ações)
-          return `
+            return `
             <div data-action="adminOpenDeal" data-id="${d.ID}" style="cursor:pointer">
               ${whoLine}
               ${makeDealCard(d, {allowBatch:false, adminMode:true})}
             </div>
           `;
-        }).join("")
+          })
+          .join("")
       : `<div class="eqd-empty">Nenhum resultado para: <strong>${escHtml(kwRaw)}</strong></div>`;
 
     openModal(`Busca: “${escHtml(kwRaw)}” • ${hits.length} resultado(s)`, listHTML);
   }
 
   el.searchBtn.addEventListener("click", runSearchAdmin);
-  el.searchInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); runSearchAdmin(); } });
+  el.searchInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      runSearchAdmin();
+    }
+  });
 
   // =========================
-  // 15) CALENDÁRIO (ajuste visual — mantém modal simples)
+  // 15) CALENDÁRIO (GRADE DO MÊS)
   // =========================
   let selectedDate = new Date();
+  let calendarCursor = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
+
+  const MONTHS_PT = [
+    "Janeiro",
+    "Fevereiro",
+    "Março",
+    "Abril",
+    "Maio",
+    "Junho",
+    "Julho",
+    "Agosto",
+    "Setembro",
+    "Outubro",
+    "Novembro",
+    "Dezembro",
+  ];
+  const DOW_PT = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
+
+  function sameDay(a, b) {
+    return a && b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  }
+
+  function monthGrid(cursor) {
+    const y = cursor.getFullYear();
+    const m = cursor.getMonth();
+
+    const first = new Date(y, m, 1);
+    const last = new Date(y, m + 1, 0);
+
+    // Monday-based offset: JS getDay 0=Sun...6=Sat
+    const jsDow = first.getDay(); // 0..6
+    const monIndex = (jsDow + 6) % 7; // 0=Mon..6=Sun
+    const start = new Date(y, m, 1 - monIndex);
+
+    const cells = [];
+    for (let i = 0; i < 42; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      cells.push(d);
+    }
+
+    return { first, last, cells };
+  }
+
+  function renderCalendarBody() {
+    const { cells } = monthGrid(calendarCursor);
+    const today = new Date();
+
+    const title = `${MONTHS_PT[calendarCursor.getMonth()]} ${calendarCursor.getFullYear()}`;
+
+    const dowRow = DOW_PT.map((d) => `<div class="calDow">${d}</div>`).join("");
+
+    const cellHtml = cells
+      .map((d) => {
+        const off = d.getMonth() !== calendarCursor.getMonth();
+        const cls = [
+          "calCell",
+          off ? "off" : "",
+          sameDay(d, today) ? "today" : "",
+          sameDay(d, selectedDate) ? "sel" : "",
+        ]
+          .filter(Boolean)
+          .join(" ");
+
+        return `<div class="${cls}" data-action="calPick" data-cal="${d.toISOString()}">${d.getDate()}</div>`;
+      })
+      .join("");
+
+    return `
+      <div class="calWrap">
+        <div class="calHead">
+          <div class="calTitle">${escHtml(title)}</div>
+          <div class="calNav">
+            <button class="eqd-btn" data-action="calPrev">◀</button>
+            <button class="eqd-btn" data-action="calToday">Hoje</button>
+            <button class="eqd-btn" data-action="calNext">▶</button>
+            <button class="eqd-btn eqd-btnPrimary" data-action="calApply">Aplicar</button>
+          </div>
+        </div>
+
+        <div class="calGrid">${dowRow}${cellHtml}</div>
+      </div>
+    `;
+  }
 
   function openCalendarModal() {
-    const base = new Date(selectedDate);
-    const localIso = new Date(base.getTime() - base.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    calendarCursor = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
 
-    openModal("Calendário", `
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-        <input id="calDate" type="date" value="${localIso}"
-               style="padding:10px 12px;border-radius:999px;border:1px solid rgba(30,40,70,.16);font-weight:950;background:#fff;color:#111" />
-        <button class="eqd-btn eqd-btnPrimary" id="calOk">Aplicar</button>
-        <button class="eqd-btn" id="calToday">Hoje</button>
-      </div>
-    `);
+    openModal("Calendário", `<div id="calHost">${renderCalendarBody()}</div>`);
 
-    document.getElementById("calOk").onclick = () => {
-      const v = String(document.getElementById("calDate").value || "").trim();
-      if (!v) return;
-      const d = new Date(v + "T00:00:00");
-      if (Number.isNaN(d.getTime())) return;
-      selectedDate = d;
-      closeModal();
-      renderCurrentView();
-    };
+    const host = document.getElementById("calHost");
+    host.addEventListener("click", (e) => {
+      const a = e.target.closest("[data-action]");
+      if (!a) return;
+      const act = a.getAttribute("data-action");
 
-    document.getElementById("calToday").onclick = () => {
-      selectedDate = new Date();
-      closeModal();
-      renderCurrentView();
-    };
+      if (act === "calPrev") {
+        calendarCursor = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() - 1, 1);
+        host.innerHTML = renderCalendarBody();
+        return;
+      }
+      if (act === "calNext") {
+        calendarCursor = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() + 1, 1);
+        host.innerHTML = renderCalendarBody();
+        return;
+      }
+      if (act === "calToday") {
+        selectedDate = new Date();
+        calendarCursor = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
+        host.innerHTML = renderCalendarBody();
+        return;
+      }
+      if (act === "calPick") {
+        const iso = a.getAttribute("data-cal");
+        const d = new Date(iso);
+        if (!Number.isNaN(d.getTime())) {
+          selectedDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+          // mantém cursor no mês clicado
+          calendarCursor = new Date(d.getFullYear(), d.getMonth(), 1);
+          host.innerHTML = renderCalendarBody();
+        }
+        return;
+      }
+      if (act === "calApply") {
+        closeModal();
+        renderCurrentView();
+      }
+    });
   }
 
   // =========================
@@ -1129,8 +1335,6 @@
 
     if (isUrgenteText(deal._urgTxt)) tags.push(`<span class="eqd-tag eqd-tagUrg">URGENTE</span>`);
     if (deal._late) tags.push(`<span class="eqd-tag eqd-tagLate">ATRASADA</span>`);
-
-    // ✅ OBS clicável para ver/editar
     if (deal._hasObs) tags.push(`<span class="eqd-tag eqd-tagObs" data-action="editObs" data-id="${deal.ID}">OBS</span>`);
 
     if (deal._tarefaTxt) tags.push(`<span class="eqd-tag">Tipo: ${trunc(deal._tarefaTxt, 26)}</span>`);
@@ -1138,11 +1342,12 @@
     if (deal._etapaTxt) tags.push(`<span class="eqd-tag">ETAPA: ${trunc(deal._etapaTxt, 18)}</span>`);
     if (deal._urgTxt) tags.push(`<span class="eqd-tag">${trunc(deal._urgTxt, 22)}</span>`);
 
-    const batchBox = (context && context.allowBatch)
-      ? `<label style="display:flex;gap:6px;align-items:center;font-size:11px;font-weight:900;margin-left:auto">
+    const batchBox =
+      context && context.allowBatch
+        ? `<label style="display:flex;gap:6px;align-items:center;font-size:11px;font-weight:900;margin-left:auto">
            <input type="checkbox" class="eqd-batch" data-id="${deal.ID}"> Lote
          </label>`
-      : ``;
+        : ``;
 
     return `
       <div class="eqd-card" style="--accent-rgb:${deal._accent}" data-deal="${deal.ID}">
@@ -1172,8 +1377,8 @@
   function updateDealCache(dealId, patch) {
     const id = String(dealId);
     const apply = (d) => Object.assign(d, patch || {});
-    for (const d of (STATE.dealsAll || [])) if (String(d.ID) === id) { apply(d); break; }
-    for (const d of (STATE.dealsOpen || [])) if (String(d.ID) === id) { apply(d); break; }
+    for (const d of STATE.dealsAll || []) if (String(d.ID) === id) { apply(d); break; }
+    for (const d of STATE.dealsOpen || []) if (String(d.ID) === id) { apply(d); break; }
   }
 
   function removeFromOpen(dealId) {
@@ -1195,15 +1400,14 @@
   }
 
   // =========================
-  // 17) NOVA TAREFA + RECORRÊNCIA (igual anterior)
+  // 17) NOVA TAREFA + RECORRÊNCIA (mantido)
   // =========================
   function buildOptions(map, placeholder) {
     const entries = Object.entries(map || {});
     entries.sort((a, b) => String(a[1]).localeCompare(String(b[1]), "pt-BR", { sensitivity: "base" }));
-    return [
-      `<option value="">${placeholder}</option>`,
-      ...entries.map(([id, label]) => `<option value="${id}">${escHtml(String(label))}</option>`),
-    ].join("");
+    return [`<option value="">${placeholder}</option>`, ...entries.map(([id, label]) => `<option value="${id}">${escHtml(String(label))}</option>`)].join(
+      ""
+    );
   }
 
   async function modalNewDeal(user) {
@@ -1211,18 +1415,20 @@
     dt.setMinutes(dt.getMinutes() + 60);
     const localDefault = new Date(dt.getTime() - dt.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 
-    const [urgMap, tipoMap, etapaMap] = await Promise.all([
-      enums(UF_URGENCIA),
-      enums(UF_TAREFA),
-      enums(UF_ETAPA),
-    ]);
+    const [urgMap, tipoMap, etapaMap] = await Promise.all([enums(UF_URGENCIA), enums(UF_TAREFA), enums(UF_ETAPA)]);
 
     let colabIsEnum = false;
     let colabMap = {};
-    try { colabIsEnum = await enumHasOptions(UF_COLAB); if (colabIsEnum) colabMap = await enums(UF_COLAB); } catch (_) {}
+    try {
+      colabIsEnum = await enumHasOptions(UF_COLAB);
+      if (colabIsEnum) colabMap = await enums(UF_COLAB);
+    } catch (_) {}
 
     const colabFieldHtml = colabIsEnum
-      ? `<select id="nwColab" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16)">${buildOptions(colabMap, "— (opcional) —")}</select>`
+      ? `<select id="nwColab" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16)">${buildOptions(
+          colabMap,
+          "— (opcional) —"
+        )}</select>`
       : `<input id="nwColab" placeholder="(opcional)" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16)" />`;
 
     openModal(`Nova tarefa — ${user.name}`, `
@@ -1246,12 +1452,18 @@
 
         <div>
           <div style="font-size:11px;font-weight:900;margin-bottom:6px">Urgência</div>
-          <select id="nwUrg" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16)">${buildOptions(urgMap, "— Sem urgência —")}</select>
+          <select id="nwUrg" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16)">${buildOptions(
+            urgMap,
+            "— Sem urgência —"
+          )}</select>
         </div>
 
         <div>
           <div style="font-size:11px;font-weight:900;margin-bottom:6px">Etapa</div>
-          <select id="nwEtapa" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16)">${buildOptions(etapaMap, "— (opcional) —")}</select>
+          <select id="nwEtapa" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16)">${buildOptions(
+            etapaMap,
+            "— (opcional) —"
+          )}</select>
         </div>
 
         <div>
@@ -1357,7 +1569,8 @@
 
     document.getElementById("nwSave").onclick = async () => {
       try {
-        warn.style.display = "none"; warn.textContent = "";
+        warn.style.display = "none";
+        warn.textContent = "";
         setBusy("Criando…");
 
         const rawTitle = String(document.getElementById("nwTitle").value || "").trim();
@@ -1379,7 +1592,7 @@
           while (created < 10 && count < 30) {
             count++;
             if (!isWeekend(d)) {
-              const iso = localInputToIsoWithOffset(new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,16));
+              const iso = localInputToIsoWithOffset(new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16));
               await createOne(iso, null);
               created++;
             }
@@ -1391,7 +1604,7 @@
           let d = new Date(base);
           while (d.getDay() !== wanted) d.setDate(d.getDate() + 1);
           for (let i = 0; i < 8; i++) {
-            const iso = localInputToIsoWithOffset(new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,16));
+            const iso = localInputToIsoWithOffset(new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16));
             await createOne(iso, null);
             d.setDate(d.getDate() + 7);
           }
@@ -1401,7 +1614,7 @@
           let d = new Date(base);
           d.setDate(day);
           for (let i = 0; i < 6; i++) {
-            const iso = localInputToIsoWithOffset(new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,16));
+            const iso = localInputToIsoWithOffset(new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16));
             await createOne(iso, null);
             d = addMonthsKeepDay(d, day);
           }
@@ -1420,7 +1633,7 @@
   }
 
   // =========================
-  // 18) FOLLOW-UP (igual anterior)
+  // 18) FOLLOW-UP (mantido)
   // =========================
   async function createFollowUpDealForUser(user, title, prazoIso) {
     const [urgMap, tipoMap, etapaMap] = await Promise.all([enums(UF_URGENCIA), enums(UF_TAREFA), enums(UF_ETAPA)]);
@@ -1447,30 +1660,33 @@
   }
 
   // =========================
-  // 19) CONCLUÍDAS: agora só do DIA
+  // 19) CONCLUÍDAS: só do DIA
   // =========================
   async function modalConcluidasDia(user) {
-    openModal(`Concluídas do dia — ${user.name}`, `
-      <div id="cdList"></div>
-    `);
+    openModal(`Concluídas do dia — ${user.name}`, `<div id="cdList"></div>`);
 
     const ds = dayStart(selectedDate).getTime();
     const de = dayEnd(selectedDate).getTime();
 
-    const all = (STATE.dealsAll || []).filter(d => String(d.ASSIGNED_BY_ID || d._assigned || "") === String(user.userId));
-    const done = all.filter(d => STATE.doneStageId && String(d.STAGE_ID) === String(STATE.doneStageId));
-    const hits = done.filter(d => {
-      const t = d._prazo ? new Date(d._prazo).getTime() : NaN;
-      return Number.isFinite(t) && t >= ds && t <= de;
-    }).sort((a,b)=>createdMs(b)-createdMs(a));
+    const all = (STATE.dealsAll || []).filter((d) => String(d.ASSIGNED_BY_ID || d._assigned || "") === String(user.userId));
+    const done = all.filter((d) => STATE.doneStageId && String(d.STAGE_ID) === String(STATE.doneStageId));
+    const hits = done
+      .filter((d) => {
+        const t = d._prazo ? new Date(d._prazo).getTime() : NaN;
+        return Number.isFinite(t) && t >= ds && t <= de;
+      })
+      .sort((a, b) => createdMs(b) - createdMs(a));
 
     const box = document.getElementById("cdList");
-    if (!hits.length) { box.innerHTML = `<div class="eqd-empty">Nenhuma concluída neste dia.</div>`; return; }
-    box.innerHTML = hits.map(d => makeDealCard(d, {allowBatch:false})).join("");
+    if (!hits.length) {
+      box.innerHTML = `<div class="eqd-empty">Nenhuma concluída neste dia.</div>`;
+      return;
+    }
+    box.innerHTML = hits.map((d) => makeDealCard(d, { allowBatch: false })).join("");
   }
 
   // =========================
-  // 20) USER CARD STATS (concluídas do dia)
+  // 20) USER CARD STATS
   // =========================
   function overdueEmoji(overdueCount) {
     if (overdueCount <= 0) return "🟢";
@@ -1482,26 +1698,26 @@
 
   function countUserStats(userId) {
     const id = String(userId);
-    const all = (STATE.dealsAll || []).filter(d => String(d.ASSIGNED_BY_ID || d._assigned || "") === id);
-    const open = all.filter(d => !(STATE.doneStageId && String(d.STAGE_ID) === String(STATE.doneStageId)));
-    const done = all.filter(d => STATE.doneStageId && String(d.STAGE_ID) === String(STATE.doneStageId));
+    const all = (STATE.dealsAll || []).filter((d) => String(d.ASSIGNED_BY_ID || d._assigned || "") === id);
+    const open = all.filter((d) => !(STATE.doneStageId && String(d.STAGE_ID) === String(STATE.doneStageId)));
+    const done = all.filter((d) => STATE.doneStageId && String(d.STAGE_ID) === String(STATE.doneStageId));
 
     const ds = dayStart(selectedDate).getTime();
     const de = dayEnd(selectedDate).getTime();
 
-    const dayOpen = open.filter(d => {
+    const dayOpen = open.filter((d) => {
       if (!d._prazo) return false;
       const t = new Date(d._prazo).getTime();
       return Number.isFinite(t) && t >= ds && t <= de;
     });
 
-    const dayDone = done.filter(d => {
+    const dayDone = done.filter((d) => {
       if (!d._prazo) return false;
       const t = new Date(d._prazo).getTime();
       return Number.isFinite(t) && t >= ds && t <= de;
     });
 
-    const overdue = open.filter(d => d._late);
+    const overdue = open.filter((d) => d._late);
     return {
       day: dayOpen.length,
       doneDay: dayDone.length,
@@ -1516,11 +1732,14 @@
 
     return `
       <div class="userCard" data-action="openUser" data-userid="${u.userId}">
-        <div class="userLeft">
-          <img class="userPhoto" src="${photo || ""}" alt="${escHtml(u.name)}" referrerpolicy="no-referrer"
-            onerror="try{this.onerror=null;this.src='';this.style.display='none'}catch(e){}" />
+        <div class="userInfoLeft">
           <div class="userName">${escHtml(u.name)}</div>
           <div class="userTeam">Equipe ${escHtml(u.team || "")}</div>
+        </div>
+
+        <div class="userPhotoWrap">
+          <img class="userPhoto" src="${photo || ""}" alt="${escHtml(u.name)}" referrerpolicy="no-referrer"
+            onerror="try{this.onerror=null;this.src='';this.style.display='none'}catch(e){}" />
         </div>
 
         <div class="userRight">
@@ -1550,7 +1769,7 @@
   function dealsOfSelectedDayForUser(userId) {
     const ds = dayStart(selectedDate).getTime();
     const de = dayEnd(selectedDate).getTime();
-    return (STATE.dealsOpen || []).filter(d => {
+    return (STATE.dealsOpen || []).filter((d) => {
       if (String(d.ASSIGNED_BY_ID || d._assigned || "") !== String(userId)) return false;
       if (!d._prazo) return false;
       const t = new Date(d._prazo).getTime();
@@ -1565,8 +1784,11 @@
   }
 
   function renderUserPanelStandard(userId) {
-    const user = USERS.find(u => Number(u.userId) === Number(userId));
-    if (!user) { renderGeneral(); return; }
+    const user = USERS.find((u) => Number(u.userId) === Number(userId));
+    if (!user) {
+      renderGeneral();
+      return;
+    }
 
     const photo = STATE.userPhotoById.get(Number(user.userId)) || "";
     const dealsDay = dealsOfSelectedDayForUser(user.userId);
@@ -1602,20 +1824,21 @@
       </div>
 
       <div class="panelCols">
-        ${[0,1,2].map(i => `
+        ${[0, 1, 2]
+          .map(
+            (i) => `
           <div class="panelCol">
             <div class="panelColHead"></div>
             <div class="panelColBody" id="col_${i}">${
-              cols[i].length
-                ? cols[i].map(d => makeDealCard(d, {allowBatch:true})).join("")
-                : `<div class="eqd-empty">Sem itens do dia</div>`
+              cols[i].length ? cols[i].map((d) => makeDealCard(d, { allowBatch: true })).join("") : `<div class="eqd-empty">Sem itens do dia</div>`
             }</div>
           </div>
-        `).join("")}
+        `
+          )
+          .join("")}
       </div>
     `;
 
-    // alerta leads (pisca + bips) só para quem tem
     if (LEAD_USERS.has(String(user.userId))) {
       const btn = document.getElementById("btnLeads");
       if (btn) {
@@ -1628,24 +1851,36 @@
       }
     }
 
-    // busca só da user (no dia)
     const doUserSearch = () => {
       const kw = norm(String(document.getElementById("userSearch").value || "").trim());
-      if (!kw) { alert("Digite uma palavra."); return; }
-      const hits = ordered.filter(d => norm([d.TITLE||"", d._obs||"", d._tarefaTxt||"", d._colabTxt||"", d._etapaTxt||"", d._urgTxt||""].join(" ")).includes(kw));
-      openModal(`Busca — ${user.name} • ${hits.length}`, hits.length ? hits.map(d => makeDealCard(d, {allowBatch:false})).join("") : `<div class="eqd-empty">Nada encontrado.</div>`);
+      if (!kw) {
+        alert("Digite uma palavra.");
+        return;
+      }
+      const hits = ordered.filter((d) => norm([d.TITLE || "", d._obs || "", d._tarefaTxt || "", d._colabTxt || "", d._etapaTxt || "", d._urgTxt || ""].join(" ")).includes(kw));
+      openModal(
+        `Busca — ${user.name} • ${hits.length}`,
+        hits.length ? hits.map((d) => makeDealCard(d, { allowBatch: false })).join("") : `<div class="eqd-empty">Nada encontrado.</div>`
+      );
     };
     document.getElementById("userSearchBtn").onclick = doUserSearch;
-    document.getElementById("userSearch").onkeydown = (e) => { if (e.key === "Enter") doUserSearch(); };
+    document.getElementById("userSearch").onkeydown = (e) => {
+      if (e.key === "Enter") doUserSearch();
+    };
 
-    // reagendar em lote
     document.getElementById("batchResched").onclick = async () => {
-      const ids = [...document.querySelectorAll(".eqd-batch:checked")].map(x => x.getAttribute("data-id"));
-      if (!ids.length) { alert("Selecione tarefas marcando 'Lote' nos cards."); return; }
+      const ids = [...document.querySelectorAll(".eqd-batch:checked")].map((x) => x.getAttribute("data-id"));
+      if (!ids.length) {
+        alert("Selecione tarefas marcando 'Lote' nos cards.");
+        return;
+      }
       const whenLocal = String(prompt("Novo prazo (ex.: 2026-02-21 14:30)") || "").trim();
       if (!whenLocal) return;
       const prazoIso = localInputToIsoWithOffset(whenLocal);
-      if (!prazoIso) { alert("Data inválida."); return; }
+      if (!prazoIso) {
+        alert("Data inválida.");
+        return;
+      }
 
       try {
         setBusy("Reagendando…");
@@ -1666,45 +1901,54 @@
 
   // ✅ Painel especial para LEAD_USERS
   function renderUserPanelLeads(userId) {
-    const user = USERS.find(u => Number(u.userId) === Number(userId));
-    if (!user) { renderGeneral(); return; }
+    const user = USERS.find((u) => Number(u.userId) === Number(userId));
+    if (!user) {
+      renderGeneral();
+      return;
+    }
 
     const photo = STATE.userPhotoById.get(Number(user.userId)) || "";
 
     const dealsDay = dealsOfSelectedDayForUser(user.userId);
-    const follow = dealsDay.filter(d => norm(d._tarefaTxt || "").includes(norm("FOLLOW-UP")));
-    const normal = dealsDay.filter(d => !norm(d._tarefaTxt || "").includes(norm("FOLLOW-UP")));
+    const follow = dealsDay.filter((d) => norm(d._tarefaTxt || "").includes(norm("FOLLOW-UP")));
+    const normal = dealsDay.filter((d) => !norm(d._tarefaTxt || "").includes(norm("FOLLOW-UP")));
 
     const orderedA = sortDeals(normal);
     const orderedB = sortDeals(follow);
 
-    // coluna leads (dia) — apenas EM ATENDIMENTO e QUALIFICADO
     const ds = dayStart(selectedDate).getTime();
     const de = dayEnd(selectedDate).getTime();
     const sAt = leadStageId("EM ATENDIMENTO");
     const sQual = leadStageId("QUALIFICADO");
 
     const leadsUser = STATE.leadsByUser.get(String(user.userId)) || [];
-    const leadsDay = leadsUser.filter(l => {
-      const t = l.DATE_CREATE ? new Date(l.DATE_CREATE).getTime() : NaN;
+    const leadsDay = leadsUser.filter((l) => {
+      const tStr = leadDataHora(l);
+      const t = tStr ? new Date(tStr).getTime() : NaN;
       if (!Number.isFinite(t) || t < ds || t > de) return false;
       const st = String(l.STATUS_ID || "");
       return st === String(sAt) || st === String(sQual);
     });
 
-    const leadsMiniCards = leadsDay.length ? leadsDay.map(l => {
-      const op = leadOperadora(l);
-      const when = l.DATE_CREATE ? fmt(l.DATE_CREATE) : "—";
-      return `
+    const leadsMiniCards = leadsDay.length
+      ? leadsDay
+          .map((l) => {
+            const op = leadOperadora(l);
+            const when = leadDataHora(l) ? fmt(leadDataHora(l)) : "—";
+            const tel = leadTelefone(l);
+            return `
         <div class="leadCard">
           <div class="leadTitle">${escHtml(leadTitle(l))}</div>
           <div class="leadMeta">
             ${op ? `<span>Operadora: <strong>${escHtml(op)}</strong></span>` : ``}
+            ${tel ? `<span>Telefone: <strong>${escHtml(tel)}</strong></span>` : ``}
             <span>Data: <strong>${escHtml(when)}</strong></span>
           </div>
         </div>
       `;
-    }).join("") : `<div class="eqd-empty">Sem leads do dia (Em atendimento / Qualificado)</div>`;
+          })
+          .join("")
+      : `<div class="eqd-empty">Sem leads do dia (Em atendimento / Qualificado)</div>`;
 
     el.main.innerHTML = `
       <div class="panelHead">
@@ -1733,11 +1977,11 @@
       <div class="panelCols">
         <div class="panelCol">
           <div class="panelColHead"></div>
-          <div class="panelColBody">${orderedA.length ? orderedA.map(d => makeDealCard(d, {allowBatch:true})).join("") : `<div class="eqd-empty">Sem itens do dia</div>`}</div>
+          <div class="panelColBody">${orderedA.length ? orderedA.map((d) => makeDealCard(d, { allowBatch: true })).join("") : `<div class="eqd-empty">Sem itens do dia</div>`}</div>
         </div>
         <div class="panelCol">
           <div class="panelColHead"></div>
-          <div class="panelColBody">${orderedB.length ? orderedB.map(d => makeDealCard(d, {allowBatch:true})).join("") : `<div class="eqd-empty">Sem FOLLOW-UP do dia</div>`}</div>
+          <div class="panelColBody">${orderedB.length ? orderedB.map((d) => makeDealCard(d, { allowBatch: true })).join("") : `<div class="eqd-empty">Sem FOLLOW-UP do dia</div>`}</div>
         </div>
         <div class="panelCol">
           <div class="panelColHead"></div>
@@ -1756,25 +2000,37 @@
       }
     }
 
-    // busca só da user (no dia)
     const allDay = sortDeals(dealsDay);
     const doUserSearch = () => {
       const kw = norm(String(document.getElementById("userSearch").value || "").trim());
-      if (!kw) { alert("Digite uma palavra."); return; }
-      const hits = allDay.filter(d => norm([d.TITLE||"", d._obs||"", d._tarefaTxt||"", d._colabTxt||"", d._etapaTxt||"", d._urgTxt||""].join(" ")).includes(kw));
-      openModal(`Busca — ${user.name} • ${hits.length}`, hits.length ? hits.map(d => makeDealCard(d, {allowBatch:false})).join("") : `<div class="eqd-empty">Nada encontrado.</div>`);
+      if (!kw) {
+        alert("Digite uma palavra.");
+        return;
+      }
+      const hits = allDay.filter((d) => norm([d.TITLE || "", d._obs || "", d._tarefaTxt || "", d._colabTxt || "", d._etapaTxt || "", d._urgTxt || ""].join(" ")).includes(kw));
+      openModal(
+        `Busca — ${user.name} • ${hits.length}`,
+        hits.length ? hits.map((d) => makeDealCard(d, { allowBatch: false })).join("") : `<div class="eqd-empty">Nada encontrado.</div>`
+      );
     };
     document.getElementById("userSearchBtn").onclick = doUserSearch;
-    document.getElementById("userSearch").onkeydown = (e) => { if (e.key === "Enter") doUserSearch(); };
+    document.getElementById("userSearch").onkeydown = (e) => {
+      if (e.key === "Enter") doUserSearch();
+    };
 
-    // reagendar em lote
     document.getElementById("batchResched").onclick = async () => {
-      const ids = [...document.querySelectorAll(".eqd-batch:checked")].map(x => x.getAttribute("data-id"));
-      if (!ids.length) { alert("Selecione tarefas marcando 'Lote' nos cards."); return; }
+      const ids = [...document.querySelectorAll(".eqd-batch:checked")].map((x) => x.getAttribute("data-id"));
+      if (!ids.length) {
+        alert("Selecione tarefas marcando 'Lote' nos cards.");
+        return;
+      }
       const whenLocal = String(prompt("Novo prazo (ex.: 2026-02-21 14:30)") || "").trim();
       if (!whenLocal) return;
       const prazoIso = localInputToIsoWithOffset(whenLocal);
-      if (!prazoIso) { alert("Data inválida."); return; }
+      if (!prazoIso) {
+        alert("Data inválida.");
+        return;
+      }
 
       try {
         setBusy("Reagendando…");
@@ -1799,7 +2055,7 @@
   }
 
   // =========================
-  // 22) MULTI SELEÇÃO (VOLTA + FOTO MAIOR + ABRE INDIVIDUAL E RETORNA)
+  // 22) MULTI SELEÇÃO (mantido)
   // =========================
   let lastMultiSelection = [];
 
@@ -1813,12 +2069,14 @@
         <button class="eqd-btn" data-action="modalClose">VOLTAR</button>
       </div>
       <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px">
-        ${USERS.map(u => `
+        ${USERS.map(
+          (u) => `
           <label style="display:flex;gap:8px;align-items:center;border:1px solid rgba(0,0,0,.12);border-radius:12px;padding:8px;background:rgba(255,255,255,.65)">
             <input type="checkbox" class="ms-u" value="${u.userId}" ${lastMultiSelection.includes(Number(u.userId)) ? "checked" : ""}>
             <span style="font-weight:950">${escHtml(u.name)}</span>
           </label>
-        `).join("")}
+        `
+        ).join("")}
       </div>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
         <button class="eqd-btn eqd-btnPrimary" id="ms-ok">Abrir</button>
@@ -1826,7 +2084,7 @@
     `);
 
     document.getElementById("ms-ok").onclick = () => {
-      const sel = [...document.querySelectorAll(".ms-u:checked")].map(x => Number(x.value));
+      const sel = [...document.querySelectorAll(".ms-u:checked")].map((x) => Number(x.value));
       if (sel.length < 1) return alert("Selecione ao menos 1.");
       if (sel.length > 5) return alert("Máximo 5.");
       lastMultiSelection = sel.slice();
@@ -1847,13 +2105,14 @@
       </div>
 
       <div style="display:grid;grid-template-columns:repeat(${cols},minmax(280px,1fr));gap:12px">
-        ${userIds.map(uid => {
-          const u = USERS.find(x => Number(x.userId) === Number(uid)) || { name: `User ${uid}`, userId: uid };
-          const photo = STATE.userPhotoById.get(Number(uid)) || "";
-          return `
+        ${userIds
+          .map((uid) => {
+            const u = USERS.find((x) => Number(x.userId) === Number(uid)) || { name: `User ${uid}`, userId: uid };
+            const photo = STATE.userPhotoById.get(Number(uid)) || "";
+            return `
             <section class="panelCol">
               <div class="panelColHead" style="opacity:1;height:auto;padding:10px 12px;display:flex;gap:10px;align-items:center;border-bottom:1px solid var(--border)">
-                <img src="${photo||""}" data-action="openUserFromMulti" data-userid="${uid}"
+                <img src="${photo || ""}" data-action="openUserFromMulti" data-userid="${uid}"
                      style="width:52px;height:52px;border-radius:999px;object-fit:cover;border:1px solid rgba(0,0,0,.12);cursor:pointer" referrerpolicy="no-referrer"
                      onerror="try{this.onerror=null;this.style.display='none'}catch(e){}" />
                 <span style="font-weight:950">${escHtml(u.name)}</span>
@@ -1861,26 +2120,26 @@
               <div class="panelColBody" id="ms_${uid}"></div>
             </section>
           `;
-        }).join("")}
+          })
+          .join("")}
       </div>
     `;
 
-    userIds.forEach(uid => {
+    userIds.forEach((uid) => {
       const box = document.getElementById(`ms_${uid}`);
       const deals = dealsOfSelectedDayForUser(uid);
       const ordered = sortDeals(deals);
-      box.innerHTML = ordered.length ? ordered.map(d => makeDealCard(d, {allowBatch:false})).join("") : `<div class="eqd-empty">Sem itens do dia</div>`;
+      box.innerHTML = ordered.length ? ordered.map((d) => makeDealCard(d, { allowBatch: false })).join("") : `<div class="eqd-empty">Sem itens do dia</div>`;
     });
   }
 
   // =========================
-  // 23) LEADS MODAL (3 colunas + ações)
+  // 23) LEADS MODAL (cards com UF fixos + telefone + datahora UF)
   // =========================
   async function openLeadsModalForUser(userId) {
-    const user = USERS.find(u => String(u.userId) === String(userId));
+    const user = USERS.find((u) => String(u.userId) === String(userId));
     if (!user) return;
 
-    // ao abrir, “considera visto”
     STATE.leadsAlertUsers.delete(String(user.userId));
 
     const sAt = leadStageId("EM ATENDIMENTO");
@@ -1911,19 +2170,22 @@
 
     const leadsUser = STATE.leadsByUser.get(String(user.userId)) || [];
 
-    const at = sAt ? leadsUser.filter(l => String(l.STATUS_ID) === String(sAt)) : [];
-    const ok = sAtendido ? leadsUser.filter(l => String(l.STATUS_ID) === String(sAtendido)) : [];
-    const q = sQual ? leadsUser.filter(l => String(l.STATUS_ID) === String(sQual)) : [];
+    const at = sAt ? leadsUser.filter((l) => String(l.STATUS_ID) === String(sAt)) : [];
+    const ok = sAtendido ? leadsUser.filter((l) => String(l.STATUS_ID) === String(sAtendido)) : [];
+    const q = sQual ? leadsUser.filter((l) => String(l.STATUS_ID) === String(sQual)) : [];
 
     function cardLead(l, column) {
       const op = leadOperadora(l);
       const idade = leadIdade(l);
       const bairro = leadBairro(l);
       const fonte = leadFonte(l);
-      const when = l.DATE_CREATE ? fmt(l.DATE_CREATE) : "—";
+      const tel = leadTelefone(l);
+      const when = leadDataHora(l) ? fmt(leadDataHora(l)) : "—";
 
       const mkBtn = (label, action, toStatus) =>
-        `<button class="leadBtn ${action === "lose" ? "leadBtnD" : action==="attended" ? "leadBtnP" : ""}" data-action="${action}" data-leadid="${l.ID}" data-tostatus="${toStatus||""}" data-userid="${user.userId}">${label}</button>`;
+        `<button class="leadBtn ${action === "lose" ? "leadBtnD" : action === "attended" ? "leadBtnP" : ""}" data-action="${action}" data-leadid="${
+          l.ID
+        }" data-tostatus="${toStatus || ""}" data-userid="${user.userId}">${label}</button>`;
 
       let btns = "";
       if (column === "AT") {
@@ -1951,6 +2213,7 @@
           <div class="leadMeta">
             ${op ? `<span>Operadora: <strong>${escHtml(op)}</strong></span>` : ``}
             ${idade ? `<span>Idade: <strong>${escHtml(idade)}</strong></span>` : ``}
+            ${tel ? `<span>Telefone: <strong>${escHtml(tel)}</strong></span>` : ``}
             ${bairro ? `<span>Bairro: <strong>${escHtml(bairro)}</strong></span>` : ``}
             ${fonte ? `<span>Fonte: <strong>${escHtml(fonte)}</strong></span>` : ``}
             <span>Data: <strong>${escHtml(when)}</strong></span>
@@ -1960,23 +2223,26 @@
       `;
     }
 
-    document.getElementById("ld_at").innerHTML = at.length ? at.map(l => cardLead(l, "AT")).join("") : `<div class="eqd-empty">Nenhum</div>`;
-    document.getElementById("ld_ok").innerHTML = ok.length ? ok.map(l => cardLead(l, "OK")).join("") : `<div class="eqd-empty">Nenhum</div>`;
-    document.getElementById("ld_q").innerHTML  = q.length ? q.map(l => cardLead(l, "Q")).join("") : `<div class="eqd-empty">Nenhum</div>`;
+    document.getElementById("ld_at").innerHTML = at.length ? at.map((l) => cardLead(l, "AT")).join("") : `<div class="eqd-empty">Nenhum</div>`;
+    document.getElementById("ld_ok").innerHTML = ok.length ? ok.map((l) => cardLead(l, "OK")).join("") : `<div class="eqd-empty">Nenhum</div>`;
+    document.getElementById("ld_q").innerHTML = q.length ? q.map((l) => cardLead(l, "Q")).join("") : `<div class="eqd-empty">Nenhum</div>`;
   }
 
   // =========================
   // 24) DONE MENU + EDITS + OBS
   // =========================
   function openDoneMenu(dealId) {
-    openModal("Concluir", `
+    openModal(
+      "Concluir",
+      `
       <div class="eqd-empty">O que você quer fazer?</div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end">
         <button class="eqd-btn" data-action="modalClose">Cancelar</button>
         <button class="eqd-btn eqd-btnPrimary" data-action="doneOnly" data-id="${dealId}">Só concluir</button>
         <button class="eqd-btn" data-action="doneResched" data-id="${dealId}">Concluir e reagendar</button>
       </div>
-    `);
+    `
+    );
   }
 
   async function doneOnly(dealId) {
@@ -1990,19 +2256,26 @@
 
   async function doneResched(dealId) {
     const opt = String(prompt("Reagendar: 1) Manter dados  2) Editar (digite 1 ou 2)") || "").trim();
-    const keep = (opt !== "2");
+    const keep = opt !== "2";
 
     const prazoLocal = String(prompt("Novo prazo (ex.: 2026-02-21 14:30)") || "").trim();
     const prazoIso = localInputToIsoWithOffset(prazoLocal);
-    if (!prazoIso) { alert("Prazo inválido."); return; }
+    if (!prazoIso) {
+      alert("Prazo inválido.");
+      return;
+    }
 
     setBusy("Concluindo e reagendando…");
 
     await actionSetDone(dealId);
     removeFromOpen(dealId);
 
-    const old = (STATE.dealsAll || []).find(d => String(d.ID) === String(dealId));
-    if (!old) { clearBusy(); renderCurrentView(); return; }
+    const old = (STATE.dealsAll || []).find((d) => String(d.ID) === String(dealId));
+    if (!old) {
+      clearBusy();
+      renderCurrentView();
+      return;
+    }
 
     const fields = {
       CATEGORY_ID: Number(CATEGORY_MAIN),
@@ -2033,7 +2306,10 @@
   async function editPrazo(dealId) {
     const prazoLocal = String(prompt("Novo prazo (ex.: 2026-02-21 14:30)") || "").trim();
     const prazoIso = localInputToIsoWithOffset(prazoLocal);
-    if (!prazoIso) { alert("Prazo inválido."); return; }
+    if (!prazoIso) {
+      alert("Prazo inválido.");
+      return;
+    }
     try {
       setBusy("Salvando prazo…");
       await actionUpdateFields(dealId, { [UF_PRAZO]: prazoIso });
@@ -2062,7 +2338,7 @@
   }
 
   async function editObs(dealId) {
-    const old = (STATE.dealsAll || []).find(d => String(d.ID) === String(dealId));
+    const old = (STATE.dealsAll || []).find((d) => String(d.ID) === String(dealId));
     const cur = old ? String(old[UF_OBS] || "") : "";
     const next = String(prompt("Observações (editar):", cur) || "").trim();
     try {
@@ -2078,11 +2354,14 @@
   }
 
   async function changeColab(dealId) {
-    const list = USERS.map(u => `${u.userId} - ${u.name}`).join("\n");
+    const list = USERS.map((u) => `${u.userId} - ${u.name}`).join("\n");
     const pick = String(prompt("Digite o ID do novo responsável:\n" + list) || "").trim();
     if (!pick) return;
     const uid = Number(pick);
-    if (!uid) { alert("ID inválido."); return; }
+    if (!uid) {
+      alert("ID inválido.");
+      return;
+    }
 
     try {
       setBusy("Transferindo…");
@@ -2109,12 +2388,14 @@
     const leadId = a.getAttribute("data-leadid");
     const toStatus = a.getAttribute("data-tostatus");
 
-    if (act === "modalClose") { closeModal(); return; }
+    if (act === "modalClose") {
+      closeModal();
+      return;
+    }
 
     if (act === "openUser") {
       const userId = Number(uid);
       if (!canOpenUserPanel(userId)) return;
-      // se veio do multi, volta pro multi preservando seleção
       currentView = { kind: "user", userId, multi: currentView.multi };
       renderUserPanel(userId);
       return;
@@ -2123,7 +2404,6 @@
     if (act === "openUserFromMulti") {
       const userId = Number(uid);
       if (!canOpenUserPanel(userId)) return;
-      // mantém estado multi para voltar
       currentView = { kind: "user", userId, multi: lastMultiSelection.slice() };
       renderUserPanel(userId);
       return;
@@ -2136,7 +2416,6 @@
     }
 
     if (act === "backToPrevious") {
-      // se tinha multi, volta com seleção
       if (currentView.multi && currentView.multi.length) {
         currentView = { kind: "multi", userId: null, multi: currentView.multi.slice() };
         renderMultiColumns(currentView.multi);
@@ -2148,16 +2427,15 @@
     }
 
     if (act === "newTask") {
-      const user = USERS.find(u => Number(u.userId) === Number(uid));
+      const user = USERS.find((u) => Number(u.userId) === Number(uid));
       if (!user) return;
       modalNewDeal(user).catch(showFatal);
       return;
     }
 
     if (act === "followUp") {
-      const user = USERS.find(u => Number(u.userId) === Number(uid));
+      const user = USERS.find((u) => Number(u.userId) === Number(uid));
       if (!user) return;
-      // reusa modal simples: cria via prompt (rápido)
       const nm = String(prompt("Nome para FOLLOW-UP (ex.: João):") || "").trim();
       if (!nm) return;
       const whenLocal = String(prompt("Prazo (ex.: 2026-02-21 14:30):") || "").trim();
@@ -2166,35 +2444,67 @@
       setBusy("Criando follow-up…");
       createFollowUpDealForUser(user, nm, prazoIso)
         .then(() => refreshData(true))
-        .then(() => { clearBusy(); renderCurrentView(); })
-        .catch(err => { clearBusy(); alert(err.message||err); });
+        .then(() => {
+          clearBusy();
+          renderCurrentView();
+        })
+        .catch((err) => {
+          clearBusy();
+          alert(err.message || err);
+        });
       return;
     }
 
     if (act === "concluidasDia") {
-      const user = USERS.find(u => Number(u.userId) === Number(uid));
+      const user = USERS.find((u) => Number(u.userId) === Number(uid));
       if (!user) return;
       modalConcluidasDia(user).catch(showFatal);
       return;
     }
 
-    if (act === "doneMenu") { openDoneMenu(dealId); return; }
-    if (act === "doneOnly") { closeModal(); doneOnly(dealId).catch(err => alert(err.message||err)); return; }
-    if (act === "doneResched") { closeModal(); doneResched(dealId).catch(err => alert(err.message||err)); return; }
+    if (act === "doneMenu") {
+      openDoneMenu(dealId);
+      return;
+    }
+    if (act === "doneOnly") {
+      closeModal();
+      doneOnly(dealId).catch((err) => alert(err.message || err));
+      return;
+    }
+    if (act === "doneResched") {
+      closeModal();
+      doneResched(dealId).catch((err) => alert(err.message || err));
+      return;
+    }
 
-    if (act === "editPrazo") { editPrazo(dealId).catch(()=>{}); return; }
-    if (act === "editTitle") { editTitle(dealId).catch(()=>{}); return; }
-    if (act === "changeColab") { changeColab(dealId).catch(()=>{}); return; }
-    if (act === "editObs") { editObs(dealId).catch(()=>{}); return; }
+    if (act === "editPrazo") {
+      editPrazo(dealId).catch(() => {});
+      return;
+    }
+    if (act === "editTitle") {
+      editTitle(dealId).catch(() => {});
+      return;
+    }
+    if (act === "changeColab") {
+      changeColab(dealId).catch(() => {});
+      return;
+    }
+    if (act === "editObs") {
+      editObs(dealId).catch(() => {});
+      return;
+    }
 
     if (act === "delete") {
-      openModal("Confirmar exclusão", `
+      openModal(
+        "Confirmar exclusão",
+        `
         <div class="eqd-warn" style="display:block">Excluir este item?</div>
         <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
           <button class="eqd-btn" data-action="modalClose">Cancelar</button>
           <button class="eqd-btn eqd-btnDanger" id="confirmDel">Excluir</button>
         </div>
-      `);
+      `
+      );
       document.getElementById("confirmDel").onclick = async () => {
         try {
           setBusy("Excluindo…");
@@ -2212,17 +2522,15 @@
       return;
     }
 
-    // ADMIN: clicar no resultado abre modal com card e ações (já é o card)
     if (act === "adminOpenDeal") {
-      const d = (STATE.dealsOpen || []).find(x => String(x.ID) === String(dealId));
+      const d = (STATE.dealsOpen || []).find((x) => String(x.ID) === String(dealId));
       if (!d) return;
-      openModal(`Admin • Negócio ${d.ID}`, makeDealCard(d, {allowBatch:false, adminMode:true}));
+      openModal(`Admin • Negócio ${d.ID}`, makeDealCard(d, { allowBatch: false, adminMode: true }));
       return;
     }
 
-    // LEADS
     if (act === "leadsModal") {
-      openLeadsModalForUser(uid).catch(err => alert(err.message||err));
+      openLeadsModalForUser(uid).catch((err) => alert(err.message || err));
       return;
     }
 
@@ -2231,14 +2539,21 @@
       setBusy("Movendo lead…");
       bx("crm.lead.update", { id: String(leadId), fields: { STATUS_ID: String(toStatus) } })
         .then(() => refreshData(true))
-        .then(() => { clearBusy(); renderCurrentView(); openLeadsModalForUser(uid); })
-        .catch(err => { clearBusy(); alert(err.message||err); });
+        .then(() => {
+          clearBusy();
+          renderCurrentView();
+          openLeadsModalForUser(uid);
+        })
+        .catch((err) => {
+          clearBusy();
+          alert(err.message || err);
+        });
       return;
     }
 
     if (act === "leadFollowup") {
-      const user = USERS.find(u => String(u.userId) === String(uid));
-      const lead = (STATE.leadsAll || []).find(l => String(l.ID) === String(leadId));
+      const user = USERS.find((u) => String(u.userId) === String(uid));
+      const lead = (STATE.leadsAll || []).find((l) => String(l.ID) === String(leadId));
       if (!user || !lead) return;
 
       const nm = leadTitle(lead);
@@ -2249,8 +2564,14 @@
       setBusy("Criando follow-up…");
       createFollowUpDealForUser(user, nm, prazoIso)
         .then(() => refreshData(true))
-        .then(() => { clearBusy(); renderCurrentView(); })
-        .catch(err => { clearBusy(); alert(err.message||err); });
+        .then(() => {
+          clearBusy();
+          renderCurrentView();
+        })
+        .catch((err) => {
+          clearBusy();
+          alert(err.message || err);
+        });
       return;
     }
   }
@@ -2261,8 +2582,13 @@
   // =========================
   // 26) TOP BUTTONS
   // =========================
-  el.refresh.addEventListener("click", () => { refreshData(true).then(renderCurrentView).catch(()=>{}); });
-  el.today.addEventListener("click", () => { selectedDate = new Date(); renderCurrentView(); });
+  el.refresh.addEventListener("click", () => {
+    refreshData(true).then(renderCurrentView).catch(() => {});
+  });
+  el.today.addEventListener("click", () => {
+    selectedDate = new Date();
+    renderCurrentView();
+  });
   el.calendar.addEventListener("click", openCalendarModal);
   el.multi.addEventListener("click", openMultiSelect);
 
@@ -2270,9 +2596,7 @@
   // 27) RENDER
   // =========================
   function renderCurrentView() {
-    el.meta.textContent = STATE.lastOkAt
-      ? `Atualizado em ${fmt(STATE.lastOkAt)}${STATE.offline ? " • (offline)" : ""}`
-      : `Carregando…`;
+    el.meta.textContent = STATE.lastOkAt ? `Atualizado em ${fmt(STATE.lastOkAt)}${STATE.offline ? " • (offline)" : ""}` : `Carregando…`;
 
     if (currentView.kind === "user" && currentView.userId) {
       renderUserPanel(currentView.userId);
@@ -2305,7 +2629,6 @@
         await loadLeadsForUsers();
       }
 
-      // dispara beep quando houver alerta e você está em painel geral/multi (não spam no individual)
       if (STATE.leadsAlertUsers.size && currentView.kind !== "user") {
         play3Beeps();
       }
@@ -2339,5 +2662,4 @@
       }
     }, REFRESH_MS);
   })().catch(showFatal);
-
 })();
