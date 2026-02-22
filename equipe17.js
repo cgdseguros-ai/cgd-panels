@@ -24,28 +24,29 @@
   const CATEGORY_MAIN = 17;
 
   const USERS = [
-    { name: "Manuela", userId: 813, team: "DELTA" },
-    { name: "Maria Clara", userId: 841, team: "DELTA" },
-    { name: "Beatriz", userId: 3387, team: "DELTA" },
-    { name: "Bruna Luisa", userId: 3081, team: "DELTA" },
+  { name: "Manuela", userId: 813, team: "DELTA" },
+  { name: "Maria Clara", userId: 841, team: "DELTA" },
+  { name: "Beatriz", userId: 3387, team: "DELTA" },
+  { name: "Bruna Luisa", userId: 3081, team: "DELTA" },
 
-    { name: "Aline", userId: 15, team: "ALPHA" },
-    { name: "Adriana", userId: 19, team: "ALPHA" },
-    { name: "Andreyna", userId: 17, team: "ALPHA" },
-    { name: "Mariana", userId: 23, team: "ALPHA" },
-    { name: "Josiane", userId: 811, team: "ALPHA" },
+  { name: "Aline", userId: 15, team: "ALPHA" },
+  { name: "Adriana", userId: 19, team: "ALPHA" },
+  { name: "Andreyna", userId: 17, team: "ALPHA" },
+  { name: "Mariana", userId: 23, team: "ALPHA" },
+  { name: "Josiane", userId: 811, team: "ALPHA" },
 
-    { name: "Livia Alves", userId: 3079, team: "BETA" },
-    { name: "Fernanda Silva", userId: 3083, team: "BETA" },
-    { name: "Nicolle Belmonte", userId: 3085, team: "BETA" },
-    { name: "Anna Clara", userId: 3389, team: "BETA" },
+  { name: "Livia Alves", userId: 3079, team: "BETA" },
+  { name: "Fernanda Silva", userId: 3083, team: "BETA" },
+  { name: "Nicolle Belmonte", userId: 3085, team: "BETA" },
+  { name: "Anna Clara", userId: 3389, team: "BETA" },
 
-    { name: "Gabriel", userId: 815, team: "BETA" },
-    { name: "Amanda", userId: 269, team: "BETA" },
-    { name: "Talita", userId: 29, team: "BETA" },
-    { name: "Vivian", userId: 3101, team: "BETA" },
-  ];
-
+  // ✅ EQUIPE ÔMEGA
+  { name: "Gabriel", userId: 815, team: "ÔMEGA" },
+  { name: "Amanda", userId: 269, team: "ÔMEGA" },
+  { name: "Talita", userId: 29, team: "ÔMEGA" },
+  { name: "Vivian", userId: 3101, team: "ÔMEGA" },
+];
+   
   const LEAD_USERS = new Set(["15", "19", "17", "23", "811", "3081", "3079", "3083", "3085", "3389"]);
   const SEGUROS_USERS = new Set(["815", "269", "29", "3101"]);
 
