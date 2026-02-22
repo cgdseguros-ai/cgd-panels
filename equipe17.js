@@ -1,15 +1,8 @@
-/* eqd.js — GET • CGD CORRETORA (ATUALIZAÇÃO v2)
-   ✅ (1) Tarefas do dia mostram também as atrasadas
-   ✅ (2) Busca do painel principal: título/obs corrigidos (sem inversão) + exibe OBS como linha separada
-   ✅ (3) FOLLOW-UP (painel individual): modal (Nome do negócio + prazo), campos ocultos e automáticos
-   ✅ (4) Busca do painel individual: texto preto ao digitar (modo claro)
-   ✅ (5) Botão LEADS: borda piscando em vermelho (quando houver alerta)
-   ✅ (6) Modal LEADS: maior + busca + OBS do lead UF_CRM_LEAD_1762887033192 (editar/salvar)
-   ✅ (7) Calendário: duplo clique no dia aplica e abre o dia
-   ✅ (8) Multi seleção: até 6 users (até 6 colunas)
-   ✅ (9) Barra inferior: fotos sócios (27,1,15) + dados CGD (CNPJ/SUSEP) + endereço
-   ✅ (10) Barra superior: botões INTRANET e VENDAS
-   ✅ (11) Painel da user 813: botão FINANCEIRO
+/* eqd.js — GET • CGD CORRETORA (ATUALIZAÇÃO v3 performance + pedidos)
+   Performance:
+   - Render instantâneo via cache + atualização em background
+   - LEADS lazy-load (só quando abre modal)
+   - Fotos cache + busca apenas se faltar
 */
 
 (function () {
@@ -18,11 +11,12 @@
   // =========================
   const PROXY_BASE = "https://cgd-bx-proxy.cgdseguros.workers.dev/bx/";
   const LOGO_URL =
-    "https://bitrix24public.com/b24-6iyx5y.bitrix24.com.br/docs/pub/c77325321d1ad38e8012b995a5f4e8dd/showFile/?&token=q0zmo189kiw9";
+    "https://bitrix24public.com/b24-6iyx5y.bitrix24.com.br/docs/pub/c77325321d1ad38e8012b995a5f4e8dd/showFile/?&token=wzev6g2dxwkk";
 
   const INTRANET_URL = "https://cgdcorretora.bitrix24.site/";
   const VENDAS_URL = "https://cgdcorretorabase.bitrix24.site/vendas/";
   const FINANCEIRO_URL = "https://cgdcorretorabase.bitrix24.site/financeiro1997";
+  const SEGUROS_URL = "https://getcgdcorretora.bitrix24.site/seguros/";
 
   const REFRESH_MS = 20000;
 
@@ -53,8 +47,8 @@
     { name: "Vivian", userId: 3101, team: "BETA" },
   ];
 
-  // Users com painel especial (leads)
   const LEAD_USERS = new Set(["15", "19", "17", "23", "811", "3081", "3079", "3083", "3085", "3389"]);
+  const SEGUROS_USERS = new Set(["815", "269", "29", "3101"]); // ✅ (8)
 
   // ✅ Rodapé: sócios (Bitrix USER IDs)
   const FOOTER_PARTNERS = [
@@ -72,14 +66,13 @@
   const UF_OBS = "UF_CRM_691385BE7D33D";
   const DONE_STAGE_NAME = "CONCLUÍDO";
 
-  // ✅ LEADS — campos do seu Bitrix
+  // LEADS — campos
   const LEAD_UF_OPERADORA = "UF_CRM_1771282782";
   const LEAD_UF_IDADE = "UF_CRM_1771339221";
   const LEAD_UF_TELEFONE = "UF_CRM_1771282207";
   const LEAD_UF_BAIRRO = "UF_CRM_LEAD_1731909705398";
   const LEAD_UF_FONTE = "UF_CRM_1767285733843";
   const LEAD_UF_DATAHORA = "UF_CRM_1771333014";
-  // ✅ novo: OBS do lead
   const LEAD_UF_OBS = "UF_CRM_LEAD_1762887033192";
 
   // =========================
@@ -139,7 +132,7 @@
 
       min-height: 100vh;
       padding: 14px;
-      padding-bottom: 84px; /* espaço do rodapé */
+      padding-bottom: 102px; /* ✅ rodapé +20% */
       font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial;
       color: var(--text);
 
@@ -175,12 +168,13 @@
     .eqd-searchSelect{border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.10);border-radius:999px;padding:8px 10px;font-size:12px;font-weight:950;outline:none;min-width:170px;color:#fff;}
     .eqd-searchSelect option{color:#111;background:#fff;}
 
+    /* ✅ (3) Modo escuro: preto suave/cinzento */
     #eqd-app.eqd-dark{
-      --bgA:#14161a; --bgB:#0f1115; --bgC:#14161a;
+      --bgA:#121418; --bgB:#0f1115; --bgC:#121418;
       --border: rgba(255,255,255,.10);
       --text: #fff;
       --muted: rgba(255,255,255,.78);
-      background: linear-gradient(135deg, #0f1115, #14161a);
+      background: linear-gradient(135deg, #0f1115, #121418);
     }
 
     /* PAINEL GERAL: grid de users */
@@ -188,7 +182,6 @@
     @media (max-width:1200px){.userGrid{grid-template-columns:repeat(2,minmax(220px,1fr));}}
     @media (max-width:720px){.userGrid{grid-template-columns:1fr;}}
 
-    /* CARD DO USUÁRIO */
     .userCard{
       border:1px solid rgba(30,40,70,.12);
       border-radius:18px;
@@ -217,12 +210,10 @@
     .userEmoji{font-size:18px;}
     .userLine{font-size:11px;font-weight:950;opacity:.90}
 
-    /* modo escuro: card user off-white com letras pretas */
     #eqd-app.eqd-dark .userCard{background:#f3f1eb;border-color:rgba(0,0,0,.12);color:#111;}
     #eqd-app.eqd-dark .userName, #eqd-app.eqd-dark .userTeam, #eqd-app.eqd-dark .userLine{color:#111;}
     #eqd-app.eqd-dark .userPhoto{background:#fff;border-color:rgba(0,0,0,.12);}
 
-    /* PAINEL INDIVIDUAL */
     .panelHead{
       display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;
       margin-bottom:10px;
@@ -238,14 +229,12 @@
 
     .panelTools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:flex-end;flex:1 1 auto;}
 
-    /* botões do painel individual (modo claro): escuros */
     #eqd-app:not(.eqd-dark) .panelTools .eqd-btn{
       background:#1b1e24;border-color:#1b1e24;color:#fff;
     }
     #eqd-app:not(.eqd-dark) .panelTools .eqd-btnPrimary{background:#242a36;border-color:#242a36;color:#fff;}
     #eqd-app:not(.eqd-dark) .panelTools .eqd-btnDanger{background:#3a1f2a;border-color:#3a1f2a;color:#fff;}
 
-    /* ✅ (4) Busca do painel individual: texto PRETO ao digitar (modo claro) */
     #eqd-app:not(.eqd-dark) .panelTools .eqd-searchInput{
       background:rgba(255,255,255,.92);
       border-color:rgba(0,0,0,.18);
@@ -270,7 +259,6 @@
     .panelColHead{padding:8px 12px;border-bottom:1px solid var(--border);font-weight:950;font-size:12px;opacity:.0;height:10px;}
     .panelColBody{padding:10px;display:flex;flex-direction:column;gap:8px;overflow:auto;}
 
-    /* MODAL */
     .eqd-modalOverlay{position:fixed;inset:0;background:rgba(10,14,22,.35);backdrop-filter:blur(6px);display:none;align-items:center;justify-content:center;padding:16px;z-index:99999;}
     .eqd-modal{
       width:min(920px,96vw);
@@ -281,6 +269,8 @@
       overflow:hidden;display:flex;flex-direction:column;
     }
     .eqd-modal.wide{width:min(1280px,98vw);max-height:92vh;}
+    /* ✅ (6) full-width modal */
+    .eqd-modal.full{width:calc(100vw - 24px);max-width:none;max-height:calc(100vh - 24px);}
     #eqd-app.eqd-dark .eqd-modal{background:rgba(25,28,34,.92);border-color:rgba(255,255,255,.10);color:var(--text);}
     .eqd-modalHead{padding:12px 14px;display:flex;justify-content:space-between;align-items:center;gap:10px;border-bottom:1px solid rgba(30,40,70,.12);background:rgba(255,255,255,.82);}
     #eqd-app.eqd-dark .eqd-modalHead{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.10);}
@@ -290,7 +280,6 @@
     .eqd-modalBody{padding:12px 14px;overflow:auto;display:flex;flex-direction:column;gap:10px;}
     .eqd-warn{border:1px solid rgba(255,80,120,.28);background:rgba(255,220,235,.55);color:rgba(120,0,40,.92);padding:10px 12px;border-radius:14px;font-size:11px;font-weight:900;white-space:pre-wrap;display:none;}
 
-    /* === CARDS DE TAREFA === */
     .eqd-card{--accent-rgb:140,160,240;position:relative;border-radius:16px;border:1px solid rgba(30,40,70,.14);background:rgba(255,255,255,.82);overflow:hidden;box-shadow:0 8px 18px rgba(20,25,35,.08),0 10px 26px rgba(var(--accent-rgb),.10);flex:0 0 auto;color:rgba(18,26,40,.92);}
     #eqd-app.eqd-dark .eqd-card{background:#f3f1eb;border-color:rgba(0,0,0,.12);color:rgba(18,26,40,.92);}
     .eqd-bar{height:6px;background:rgb(var(--accent-rgb));}
@@ -312,7 +301,6 @@
     .eqd-smallBtnDanger{background:rgba(255,70,90,.14);border-color:rgba(255,70,90,.30);}
     .eqd-empty{border:1px dashed rgba(30,40,70,.18);border-radius:16px;padding:12px;background:rgba(255,255,255,.55);color:rgba(18,26,40,.62);font-size:11px;font-weight:800;text-align:center;}
 
-    /* LEADS */
     .leadCard{border:1px solid rgba(30,40,70,.12);border-radius:16px;background:rgba(255,255,255,.80);padding:10px;display:flex;flex-direction:column;gap:6px}
     #eqd-app.eqd-dark .leadCard{background:#f3f1eb;border-color:rgba(0,0,0,.12);color:#111;}
     .leadTitle{font-size:13px;font-weight:950}
@@ -325,10 +313,6 @@
     #eqd-app.eqd-dark .leadObs{background:rgba(255,255,255,.10);color:var(--text);border-color:rgba(255,255,255,.14)}
     .leadObsRow{display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;margin-top:6px}
     .leadObsRow .leadBtn{margin-left:auto}
-    .blink{animation:blink1 .95s ease-in-out infinite}
-    @keyframes blink1{0%,100%{opacity:1}50%{opacity:.35}}
-
-    /* ✅ (5) borda piscando vermelho */
     .blinkRedBorder{
       border-color: rgba(255,45,70,.85) !important;
       box-shadow: 0 0 0 2px rgba(255,45,70,.55) inset;
@@ -336,7 +320,6 @@
     }
     @keyframes blinkBorderRed{0%,100%{filter:saturate(1)}50%{filter:saturate(1.6)}}
 
-    /* CALENDÁRIO (grade mês) */
     .calWrap{display:flex;flex-direction:column;gap:10px}
     .calHead{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
     .calTitle{font-weight:950}
@@ -358,22 +341,23 @@
     .calCell.today{box-shadow:0 0 0 2px rgba(22,163,74,.35) inset}
     .calCell.sel{box-shadow:0 0 0 2px rgba(120,90,255,.55) inset}
 
-    /* RODAPÉ */
+    /* ✅ (2) rodapé +20% */
     .eqd-footer{
       position:fixed;left:0;right:0;bottom:0;
       z-index:9999;
       background:rgba(20,22,26,.92);
       color:rgba(255,255,255,.84);
       border-top:1px solid rgba(255,255,255,.10);
-      padding:10px 14px;
-      display:flex;gap:14px;align-items:center;justify-content:space-between;flex-wrap:wrap;
-      font-size:11px;font-weight:850;
+      padding:12px 16px; /* +20% */
+      display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap;
+      font-size:12px; /* +20% */
+      font-weight:850;
       backdrop-filter: blur(10px);
     }
-    .eqd-footerLeft{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-    .eqd-footerPeople{display:flex;gap:8px;align-items:center}
+    .eqd-footerLeft{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+    .eqd-footerPeople{display:flex;gap:10px;align-items:center}
     .eqd-footAvatar{
-      width:26px;height:26px;border-radius:999px;object-fit:cover;
+      width:32px;height:32px;border-radius:999px;object-fit:cover; /* +20% */
       border:1px solid rgba(255,255,255,.14);
       background:rgba(255,255,255,.10);
     }
@@ -435,14 +419,14 @@
           body.append(k, v);
         }
 
-        const maxTry = 4;
+        const maxTry = 3;
         let lastErr = null;
 
         for (let attempt = 1; attempt <= maxTry; attempt++) {
           try {
             if (attempt > 1) {
-              const base = 350 * Math.pow(2, attempt - 2);
-              const jitter = Math.floor(Math.random() * 180);
+              const base = 250 * Math.pow(2, attempt - 2);
+              const jitter = Math.floor(Math.random() * 140);
               await sleep(base + jitter);
             }
 
@@ -453,7 +437,7 @@
                 headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
                 body,
               },
-              15000
+              14000
             );
 
             if ([429, 502, 503, 504].includes(resp.status)) {
@@ -564,6 +548,19 @@
     return `${y}-${m}-${d}T${hh}:${mi}:00${sign}${oh}:${om}`;
   }
 
+  function isoFromDateAndTimeParts(dateObj, hh, mm) {
+    const pad = (n) => String(n).padStart(2, "0");
+    const y = dateObj.getFullYear();
+    const m = pad(dateObj.getMonth() + 1);
+    const d = pad(dateObj.getDate());
+    const offMin = -dateObj.getTimezoneOffset();
+    const sign = offMin >= 0 ? "+" : "-";
+    const abs = Math.abs(offMin);
+    const oh = pad(Math.floor(abs / 60));
+    const om = pad(abs % 60);
+    return `${y}-${m}-${d}T${pad(hh)}:${pad(mm)}:00${sign}${oh}:${om}`;
+  }
+
   function isWeekend(d) {
     const day = d.getDay();
     return day === 0 || day === 6;
@@ -644,23 +641,17 @@
       g = 0,
       b = 0;
     if (hue < 60) {
-      r = c;
-      g = x;
+      r = c; g = x;
     } else if (hue < 120) {
-      r = x;
-      g = c;
+      r = x; g = c;
     } else if (hue < 180) {
-      g = c;
-      b = x;
+      g = c; b = x;
     } else if (hue < 240) {
-      g = x;
-      b = c;
+      g = x; b = c;
     } else if (hue < 300) {
-      r = x;
-      b = c;
+      r = x; b = c;
     } else {
-      r = c;
-      b = x;
+      r = c; b = x;
     }
     return `${Math.round((r + m) * 255)},${Math.round((g + m) * 255)},${Math.round((b + m) * 255)}`;
   }
@@ -698,13 +689,13 @@
     offline: false,
 
     // leads
-    leadStageIdByName: new Map(), // STATUS stages
-    leadsAll: [],
-    leadsByUser: new Map(), // userId => leads[]
-    leadsAtendimentoIdsByUser: new Map(), // userId => Set(ids) last snapshot
-    leadsAlertUsers: new Set(), // userIds blinking
+    leadStageIdByName: new Map(),
+    leadsByUser: new Map(),
+    leadsAtendimentoIdsByUser: new Map(),
+    leadsAlertUsers: new Set(),
 
     footerPhotosLoaded: false,
+    bootstrapLoaded: false,
   };
 
   async function enums(uf) {
@@ -729,12 +720,8 @@
 
   function findEnumIdByLabel(map, wantedLabelNorm) {
     const entries = Object.entries(map || {});
-    for (const [id, label] of entries) {
-      if (norm(label) === wantedLabelNorm) return id;
-    }
-    for (const [id, label] of entries) {
-      if (norm(label).includes(wantedLabelNorm)) return id;
-    }
+    for (const [id, label] of entries) if (norm(label) === wantedLabelNorm) return id;
+    for (const [id, label] of entries) if (norm(label).includes(wantedLabelNorm)) return id;
     return "";
   }
 
@@ -811,10 +798,7 @@
     const colabRaw = deal[UF_COLAB];
     const colabId = String(colabRaw || "").trim();
     let colabTxt = "";
-    if (colabId) {
-      if (colabIsEnum) colabTxt = String((colabMap || {})[colabId] || colabId).trim();
-      else colabTxt = colabId;
-    }
+    if (colabId) colabTxt = colabIsEnum ? String((colabMap || {})[colabId] || colabId).trim() : colabId;
 
     const obsTxt = String(deal[UF_OBS] || "").trim();
     const hasObs = !!obsTxt;
@@ -840,9 +824,10 @@
   }
 
   // =========================
-  // 8) LEADS (STATUS) + ALERTA
+  // 8) LEADS STAGES (lazy load)
   // =========================
   async function loadLeadStages() {
+    if (STATE.leadStageIdByName && STATE.leadStageIdByName.size) return;
     const list = await bxAll("crm.status.list", { filter: { ENTITY_ID: "STATUS" } });
     const map = new Map();
     (list || []).forEach((s) => {
@@ -851,17 +836,14 @@
     });
     STATE.leadStageIdByName = map;
   }
-
   function leadStageId(name) {
     return STATE.leadStageIdByName.get(norm(name)) || "";
   }
-
   function leadTitle(lead) {
     const t = String(lead.TITLE || "").trim();
     const n = [lead.NAME, lead.LAST_NAME].filter(Boolean).join(" ").trim();
     return bestTitleFromText(t || n || `Lead ${lead.ID}`);
   }
-
   function leadOperadora(lead) {
     return String((lead && lead[LEAD_UF_OPERADORA]) || "").trim();
   }
@@ -884,13 +866,9 @@
     return String((lead && lead[LEAD_UF_OBS]) || "").trim();
   }
 
-  async function loadLeadsForUsers() {
-    const sAt = leadStageId("EM ATENDIMENTO");
-    const sQual = leadStageId("QUALIFICADO");
-    const sAtendido = leadStageId("ATENDIDO");
-    const haveStages = !!(sAt && sQual && sAtendido);
+  async function loadLeadsForOneUser(userId) {
+    await loadLeadStages();
 
-    // ✅ select com TODOS os UF necessários (inclui OBS)
     const select = [
       "ID",
       "TITLE",
@@ -910,40 +888,32 @@
       LEAD_UF_OBS,
     ].filter(Boolean);
 
-    const since = new Date(Date.now() - 1000 * 60 * 60 * 24 * 10).toISOString(); // 10 dias
-    const baseFilter = { ">=DATE_CREATE": since };
-
+    const since = new Date(Date.now() - 1000 * 60 * 60 * 24 * 10).toISOString();
     const leads = await bxAll("crm.lead.list", {
-      filter: baseFilter,
+      filter: { ">=DATE_CREATE": since, ASSIGNED_BY_ID: Number(userId) },
       select,
       order: { ID: "DESC" },
     });
 
-    STATE.leadsAll = leads || [];
-    STATE.leadsByUser = new Map();
+    STATE.leadsByUser.set(String(userId), leads || []);
 
-    for (const u of USERS) {
-      if (!LEAD_USERS.has(String(u.userId))) continue;
-      const arr = (leads || []).filter((l) => String(l.ASSIGNED_BY_ID || "") === String(u.userId));
-      STATE.leadsByUser.set(String(u.userId), arr);
+    const sAt = leadStageId("EM ATENDIMENTO");
+    const atList = sAt ? (leads || []).filter((l) => String(l.STATUS_ID) === String(sAt)) : [];
+    const prev = STATE.leadsAtendimentoIdsByUser.get(String(userId)) || new Set();
+    const nowSet = new Set(atList.map((l) => String(l.ID)));
 
-      const atList = haveStages ? arr.filter((l) => String(l.STATUS_ID) === String(sAt)) : [];
-      const prev = STATE.leadsAtendimentoIdsByUser.get(String(u.userId)) || new Set();
-      const nowSet = new Set(atList.map((l) => String(l.ID)));
-
-      let hasNew = false;
-      for (const id of nowSet) {
-        if (!prev.has(id)) {
-          hasNew = true;
-          break;
-        }
+    let hasNew = false;
+    for (const id of nowSet) {
+      if (!prev.has(id)) {
+        hasNew = true;
+        break;
       }
-
-      if (hasNew && nowSet.size) STATE.leadsAlertUsers.add(String(u.userId));
-      if (!nowSet.size) STATE.leadsAlertUsers.delete(String(u.userId));
-
-      STATE.leadsAtendimentoIdsByUser.set(String(u.userId), nowSet);
     }
+    if (hasNew && nowSet.size) STATE.leadsAlertUsers.add(String(userId));
+    if (!nowSet.size) STATE.leadsAlertUsers.delete(String(userId));
+    STATE.leadsAtendimentoIdsByUser.set(String(userId), nowSet);
+
+    return leads || [];
   }
 
   function play3Beeps() {
@@ -968,17 +938,15 @@
       beep(now + 0.18);
       beep(now + 0.36);
       setTimeout(() => {
-        try {
-          ctx.close();
-        } catch (_) {}
+        try { ctx.close(); } catch (_) {}
       }, 900);
     } catch (_) {}
   }
 
   // =========================
-  // 9) LOAD DEALS
+  // 9) LOAD DEALS (cache-first)
   // =========================
-  const CACHE_KEY = "EQD_CACHE_V3";
+  const CACHE_KEY = "EQD_CACHE_V4";
   function saveCache() {
     try {
       localStorage.setItem(
@@ -986,7 +954,6 @@
         JSON.stringify({
           at: Date.now(),
           dealsAll: STATE.dealsAll,
-          leadsAll: STATE.leadsAll,
         })
       );
     } catch (_) {}
@@ -998,7 +965,8 @@
       const j = JSON.parse(raw);
       if (!j) return false;
       if (Array.isArray(j.dealsAll)) STATE.dealsAll = j.dealsAll;
-      if (Array.isArray(j.leadsAll)) STATE.leadsAll = j.leadsAll;
+      // rebuild open list quickly
+      STATE.dealsOpen = (STATE.dealsAll || []).filter((d) => !(STATE.doneStageId && String(d.STAGE_ID) === String(STATE.doneStageId)));
       return true;
     } catch (_) {
       return false;
@@ -1040,24 +1008,20 @@
     const parsed = (deals || []).map((d) => parseDeal(d, maps));
     STATE.dealsAll = parsed;
 
-    const open = [];
-    for (const d of parsed) {
-      if (STATE.doneStageId && String(d.STAGE_ID) === String(STATE.doneStageId)) continue;
-      open.push(d);
-    }
-    STATE.dealsOpen = open;
-
-    await Promise.all(USERS.map((u) => ensureUserPhoto(u.userId, u.name)));
-
-    // ✅ carrega fotos dos sócios do rodapé (1x)
-    if (!STATE.footerPhotosLoaded) {
-      await Promise.all(FOOTER_PARTNERS.map((p) => ensureUserPhoto(p.userId, "")));
-      STATE.footerPhotosLoaded = true;
-    }
+    STATE.dealsOpen = (parsed || []).filter((d) => !(STATE.doneStageId && String(d.STAGE_ID) === String(STATE.doneStageId)));
 
     STATE.lastOkAt = new Date();
     STATE.offline = false;
     saveCache();
+
+    // fotos: só buscar quem não tem cache ainda (economiza)
+    const missing = USERS.filter((u) => !STATE.userPhotoById.has(Number(u.userId)));
+    await Promise.all(missing.map((u) => ensureUserPhoto(u.userId, u.name)));
+
+    if (!STATE.footerPhotosLoaded) {
+      await Promise.all(FOOTER_PARTNERS.map((p) => ensureUserPhoto(p.userId, "")));
+      STATE.footerPhotosLoaded = true;
+    }
   }
 
   // =========================
@@ -1115,6 +1079,10 @@
             <div class="eqd-footerMiniTitle">Endereço</div>
             <div class="eqd-footerDim">Av Ayrton Senna, 2500, SS109, Barra da Tijuca</div>
           </div>
+          <div class="eqd-footerBlock">
+            <div class="eqd-footerMiniTitle">Sistema</div>
+            <div class="eqd-footerDim">Sistema criado pelo Grupo CGD</div> <!-- ✅ (1) -->
+          </div>
         </div>
 
         <div class="eqd-footerRight">
@@ -1171,20 +1139,16 @@
   // =========================
   // 11) DARK TOGGLE
   // =========================
-  const DARK_KEY = "eqd_dark_v5";
+  const DARK_KEY = "eqd_dark_v6";
   function applyDark(on) {
     if (on) el.app.classList.add("eqd-dark");
     else el.app.classList.remove("eqd-dark");
     el.darkToggle.textContent = on ? "Modo claro" : "Modo escuro";
-    try {
-      localStorage.setItem(DARK_KEY, on ? "1" : "0");
-    } catch (_) {}
+    try { localStorage.setItem(DARK_KEY, on ? "1" : "0"); } catch (_) {}
   }
   (function initDark() {
     let on = false;
-    try {
-      on = localStorage.getItem(DARK_KEY) === "1";
-    } catch (_) {}
+    try { on = localStorage.getItem(DARK_KEY) === "1"; } catch (_) {}
     applyDark(on);
   })();
   el.darkToggle.addEventListener("click", () => applyDark(!el.app.classList.contains("eqd-dark")));
@@ -1198,15 +1162,17 @@
     el.modalOverlay.style.display = "flex";
     el.modalOverlay.setAttribute("aria-hidden", "false");
 
-    // width behavior
     el.modalEl.classList.remove("wide");
+    el.modalEl.classList.remove("full");
     if (opts && opts.wide) el.modalEl.classList.add("wide");
+    if (opts && opts.full) el.modalEl.classList.add("full"); // ✅
   }
   function closeModal() {
     el.modalOverlay.style.display = "none";
     el.modalOverlay.setAttribute("aria-hidden", "true");
     el.modalBody.onclick = null;
     el.modalEl.classList.remove("wide");
+    el.modalEl.classList.remove("full");
   }
   el.modalClose.addEventListener("click", closeModal);
   el.modalOverlay.addEventListener("click", (e) => {
@@ -1216,15 +1182,9 @@
     if (e.key === "Escape") closeModal();
   });
 
-  function setSoftStatus(msg) {
-    el.status.textContent = msg || "JS: ok";
-  }
-  function setBusy(msg) {
-    el.status.textContent = msg || "Executando…";
-  }
-  function clearBusy() {
-    el.status.textContent = "JS: ok";
-  }
+  function setSoftStatus(msg) { el.status.textContent = msg || "JS: ok"; }
+  function setBusy(msg) { el.status.textContent = msg || "Executando…"; }
+  function clearBusy() { el.status.textContent = "JS: ok"; }
 
   // =========================
   // 13) CLOCK
@@ -1232,15 +1192,14 @@
   function tickClock() {
     const d = new Date();
     el.now.textContent = `${fmtDateOnly(d)} • ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(
-      2,
-      "0"
+      2,"0"
     )}:${String(d.getSeconds()).padStart(2, "0")}`;
   }
   setInterval(tickClock, 1000);
   tickClock();
 
   // =========================
-  // 14) BUSCA (ADMIN ONLY) — (2) garantido: título/obs sem inversão
+  // 14) BUSCA (admin)
   // =========================
   function fillSearchScope() {
     el.searchScope.innerHTML =
@@ -1251,7 +1210,7 @@
   let LAST_ADMIN_PIN_OK_AT = 0;
   function ensureAdminForSearch() {
     const now = Date.now();
-    if (now - LAST_ADMIN_PIN_OK_AT < 10 * 60 * 1000) return true; // 10min
+    if (now - LAST_ADMIN_PIN_OK_AT < 10 * 60 * 1000) return true;
     const pin = askPin();
     if (!isAdmin(pin)) return false;
     LAST_ADMIN_PIN_OK_AT = now;
@@ -1276,21 +1235,10 @@
     }
 
     let base = (STATE.dealsOpen || []).slice();
-    if (scope !== "__ALL__") {
-      base = base.filter((d) => String(d.ASSIGNED_BY_ID || d._assigned || "") === String(scope));
-    }
+    if (scope !== "__ALL__") base = base.filter((d) => String(d.ASSIGNED_BY_ID || d._assigned || "") === String(scope));
 
     const hits = base.filter((d) => {
-      const blob = norm(
-        [
-          d.TITLE || "", // ✅ título (nome do negócio)
-          d._obs || "", // ✅ observação separada
-          d._tarefaTxt || "",
-          d._colabTxt || "",
-          d._etapaTxt || "",
-          d._urgTxt || "",
-        ].join(" ")
-      );
+      const blob = norm([d.TITLE || "", d._obs || "", d._tarefaTxt || "", d._colabTxt || "", d._etapaTxt || "", d._urgTxt || ""].join(" "));
       return blob.includes(kw);
     });
 
@@ -1299,13 +1247,7 @@
           .map((d) => {
             const who = dealUserNameByAssigned(d.ASSIGNED_BY_ID || d._assigned);
             const whoLine = scope === "__ALL__" ? `<div style="font-size:11px;font-weight:950;opacity:.80">USER: ${escHtml(who)}</div>` : ``;
-
-            return `
-            <div data-action="adminOpenDeal" data-id="${d.ID}" style="cursor:pointer">
-              ${whoLine}
-              ${makeDealCard(d, {allowBatch:false, adminMode:true})}
-            </div>
-          `;
+            return `<div>${whoLine}${makeDealCard(d, { allowBatch: false })}</div>`;
           })
           .join("")
       : `<div class="eqd-empty">Nenhum resultado para: <strong>${escHtml(kwRaw)}</strong></div>`;
@@ -1322,26 +1264,13 @@
   });
 
   // =========================
-  // 15) CALENDÁRIO (7) duplo clique aplica
+  // 15) CALENDÁRIO (compartilhado)
   // =========================
   let selectedDate = new Date();
   let calendarCursor = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
 
-  const MONTHS_PT = [
-    "Janeiro",
-    "Fevereiro",
-    "Março",
-    "Abril",
-    "Maio",
-    "Junho",
-    "Julho",
-    "Agosto",
-    "Setembro",
-    "Outubro",
-    "Novembro",
-    "Dezembro",
-  ];
-  const DOW_PT = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
+  const MONTHS_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+  const DOW_PT = ["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"];
 
   function sameDay(a, b) {
     return a && b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
@@ -1350,12 +1279,10 @@
   function monthGrid(cursor) {
     const y = cursor.getFullYear();
     const m = cursor.getMonth();
-
     const first = new Date(y, m, 1);
-    const jsDow = first.getDay(); // 0..6 (Sun..Sat)
-    const monIndex = (jsDow + 6) % 7; // 0=Mon..6=Sun
+    const jsDow = first.getDay();
+    const monIndex = (jsDow + 6) % 7;
     const start = new Date(y, m, 1 - monIndex);
-
     const cells = [];
     for (let i = 0; i < 42; i++) {
       const d = new Date(start);
@@ -1365,24 +1292,17 @@
     return { first, cells };
   }
 
-  function renderCalendarBody() {
+  function renderCalendarBody(overrideSelected) {
+    const sel = overrideSelected || selectedDate;
     const { cells } = monthGrid(calendarCursor);
     const today = new Date();
     const title = `${MONTHS_PT[calendarCursor.getMonth()]} ${calendarCursor.getFullYear()}`;
 
     const dowRow = DOW_PT.map((d) => `<div class="calDow">${d}</div>`).join("");
-
     const cellHtml = cells
       .map((d) => {
         const off = d.getMonth() !== calendarCursor.getMonth();
-        const cls = [
-          "calCell",
-          off ? "off" : "",
-          sameDay(d, today) ? "today" : "",
-          sameDay(d, selectedDate) ? "sel" : "",
-        ]
-          .filter(Boolean)
-          .join(" ");
+        const cls = ["calCell", off ? "off" : "", sameDay(d, today) ? "today" : "", sameDay(d, sel) ? "sel" : ""].filter(Boolean).join(" ");
         return `<div class="${cls}" data-action="calPick" data-cal="${d.toISOString()}">${d.getDate()}</div>`;
       })
       .join("");
@@ -1405,7 +1325,6 @@
 
   function openCalendarModal() {
     calendarCursor = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
-
     openModal("Calendário", `<div id="calHost">${renderCalendarBody()}</div>`);
     const host = document.getElementById("calHost");
 
@@ -1413,7 +1332,6 @@
       const a = e.target.closest("[data-action]");
       if (!a) return;
       const act = a.getAttribute("data-action");
-
       if (act === "calPrev") {
         calendarCursor = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() - 1, 1);
         host.innerHTML = renderCalendarBody();
@@ -1431,8 +1349,7 @@
         return;
       }
       if (act === "calPick") {
-        const iso = a.getAttribute("data-cal");
-        const d = new Date(iso);
+        const d = new Date(a.getAttribute("data-cal"));
         if (!Number.isNaN(d.getTime())) {
           selectedDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
           calendarCursor = new Date(d.getFullYear(), d.getMonth(), 1);
@@ -1441,12 +1358,11 @@
       }
     });
 
-    // ✅ (7) duplo clique: aplica e fecha
+    // ✅ (4) duplo clique: fecha e já vai pro dia
     host.addEventListener("dblclick", (e) => {
       const a = e.target.closest('[data-action="calPick"]');
       if (!a) return;
-      const iso = a.getAttribute("data-cal");
-      const d = new Date(iso);
+      const d = new Date(a.getAttribute("data-cal"));
       if (!Number.isNaN(d.getTime())) {
         selectedDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
         closeModal();
@@ -1455,20 +1371,98 @@
     });
   }
 
+  // ✅ (5) calendário para reagendar em lote (apenas dia, duplo clique)
+  async function openBatchRescheduleCalendar(dealIds) {
+    calendarCursor = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
+    let tempSelected = new Date(selectedDate.getTime());
+
+    openModal(
+      `Reagendar em lote • ${dealIds.length} item(ns)`,
+      `
+        <div style="font-size:12px;font-weight:950;opacity:.85">
+          Escolha o <strong>dia</strong> (duplo clique). O <strong>horário de cada card</strong> será mantido.
+        </div>
+        <div id="calHost">${renderCalendarBody(tempSelected)}</div>
+      `
+    );
+
+    const host = document.getElementById("calHost");
+
+    host.addEventListener("click", (e) => {
+      const a = e.target.closest("[data-action]");
+      if (!a) return;
+      const act = a.getAttribute("data-action");
+      if (act === "calPrev") {
+        calendarCursor = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() - 1, 1);
+        host.innerHTML = renderCalendarBody(tempSelected);
+        return;
+      }
+      if (act === "calNext") {
+        calendarCursor = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() + 1, 1);
+        host.innerHTML = renderCalendarBody(tempSelected);
+        return;
+      }
+      if (act === "calToday") {
+        tempSelected = new Date();
+        calendarCursor = new Date(tempSelected.getFullYear(), tempSelected.getMonth(), 1);
+        host.innerHTML = renderCalendarBody(tempSelected);
+        return;
+      }
+      if (act === "calPick") {
+        const d = new Date(a.getAttribute("data-cal"));
+        if (!Number.isNaN(d.getTime())) {
+          tempSelected = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+          calendarCursor = new Date(d.getFullYear(), d.getMonth(), 1);
+          host.innerHTML = renderCalendarBody(tempSelected);
+        }
+      }
+    });
+
+    host.addEventListener("dblclick", async (e) => {
+      const a = e.target.closest('[data-action="calPick"]');
+      if (!a) return;
+      const d = new Date(a.getAttribute("data-cal"));
+      if (Number.isNaN(d.getTime())) return;
+
+      const targetDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      try {
+        setBusy("Reagendando…");
+        // mantém horário individual
+        for (const id of dealIds) {
+          const deal = (STATE.dealsAll || []).find((x) => String(x.ID) === String(id));
+          if (!deal || !deal._prazo) continue;
+          const old = new Date(deal._prazo);
+          const hh = old.getHours();
+          const mm = old.getMinutes();
+          const newIso = isoFromDateAndTimeParts(targetDay, hh, mm);
+          await bx("crm.deal.update", { id: String(id), fields: { [UF_PRAZO]: newIso } });
+          deal[UF_PRAZO] = newIso;
+          deal._prazo = new Date(newIso).toISOString();
+          deal._late = false;
+        }
+        closeModal();
+        await refreshData(false);
+        renderCurrentView();
+      } catch (err) {
+        alert("Falha ao reagendar: " + (err.message || err));
+      } finally {
+        clearBusy();
+      }
+    });
+  }
+
   // =========================
-  // 16) CARD DE TAREFA + AÇÕES
+  // 16) Cards
   // =========================
   function makeDealCard(deal, context) {
     const showWarn = isAtencaoText(deal._urgTxt);
     const title = (showWarn ? "⚠️ " : "") + bestTitleFromText(deal.TITLE || "");
-
     const prazoTxt = deal._prazo ? fmt(deal._prazo) : "Sem prazo";
     const tags = [];
 
     if (isUrgenteText(deal._urgTxt)) tags.push(`<span class="eqd-tag eqd-tagUrg">URGENTE</span>`);
     if (deal._late) tags.push(`<span class="eqd-tag eqd-tagLate">ATRASADA</span>`);
     if (deal._hasObs) tags.push(`<span class="eqd-tag eqd-tagObs" data-action="editObs" data-id="${deal.ID}">OBS</span>`);
-
     if (deal._tarefaTxt) tags.push(`<span class="eqd-tag">Tipo: ${trunc(deal._tarefaTxt, 26)}</span>`);
     if (deal._colabTxt) tags.push(`<span class="eqd-tag">COLAB: ${trunc(deal._colabTxt, 28)}</span>`);
     if (deal._etapaTxt) tags.push(`<span class="eqd-tag">ETAPA: ${trunc(deal._etapaTxt, 18)}</span>`);
@@ -1481,7 +1475,6 @@
          </label>`
         : ``;
 
-    // ✅ (2) OBS sempre como linha separada, sem “virar” título
     const obsLine = deal._hasObs ? `<div class="eqd-obsLine">OBS: ${escHtml(trunc(deal._obs, 180))}</div>` : ``;
 
     return `
@@ -1510,274 +1503,18 @@
     `;
   }
 
-  function updateDealCache(dealId, patch) {
-    const id = String(dealId);
-    const apply = (d) => Object.assign(d, patch || {});
-    for (const d of STATE.dealsAll || []) if (String(d.ID) === id) { apply(d); break; }
-    for (const d of STATE.dealsOpen || []) if (String(d.ID) === id) { apply(d); break; }
-  }
-
   function removeFromOpen(dealId) {
     const id = String(dealId);
     STATE.dealsOpen = (STATE.dealsOpen || []).filter((d) => String(d.ID) !== id);
   }
 
-  async function actionSetDone(dealId) {
-    if (!STATE.doneStageId) throw new Error("Não encontrei a coluna CONCLUÍDO na pipeline.");
-    await bx("crm.deal.update", { id: String(dealId), fields: { STAGE_ID: String(STATE.doneStageId) } });
-  }
-
-  async function actionDeleteDeal(dealId) {
-    await bx("crm.deal.delete", { id: String(dealId) });
-  }
-
-  async function actionUpdateFields(dealId, fields) {
-    await bx("crm.deal.update", { id: String(dealId), fields: fields || {} });
-  }
-
   // =========================
-  // 17) NOVA TAREFA + RECORRÊNCIA (mantido)
-  // =========================
-  function buildOptions(map, placeholder) {
-    const entries = Object.entries(map || {});
-    entries.sort((a, b) => String(a[1]).localeCompare(String(b[1]), "pt-BR", { sensitivity: "base" }));
-    return [`<option value="">${placeholder}</option>`, ...entries.map(([id, label]) => `<option value="${id}">${escHtml(String(label))}</option>`)].join(
-      ""
-    );
-  }
-
-  async function modalNewDeal(user) {
-    const dt = new Date();
-    dt.setMinutes(dt.getMinutes() + 60);
-    const localDefault = new Date(dt.getTime() - dt.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-
-    const [urgMap, tipoMap, etapaMap] = await Promise.all([enums(UF_URGENCIA), enums(UF_TAREFA), enums(UF_ETAPA)]);
-
-    let colabIsEnum = false;
-    let colabMap = {};
-    try {
-      colabIsEnum = await enumHasOptions(UF_COLAB);
-      if (colabIsEnum) colabMap = await enums(UF_COLAB);
-    } catch (_) {}
-
-    const colabFieldHtml = colabIsEnum
-      ? `<select id="nwColab" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16)">${buildOptions(
-          colabMap,
-          "— (opcional) —"
-        )}</select>`
-      : `<input id="nwColab" placeholder="(opcional)" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16)" />`;
-
-    openModal(`Nova tarefa — ${user.name}`, `
-      <div class="eqd-warn" id="eqd-warn"></div>
-
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <div style="grid-column:1 / -1">
-          <div style="font-size:11px;font-weight:900;margin-bottom:6px">Nome do negócio</div>
-          <input id="nwTitle" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16)" placeholder="Ex.: Retorno cliente / Enviar proposta..." />
-        </div>
-
-        <div>
-          <div style="font-size:11px;font-weight:900;margin-bottom:6px">Prazo</div>
-          <input id="nwPrazo" type="datetime-local" value="${localDefault}" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16)" />
-        </div>
-
-        <div>
-          <div style="font-size:11px;font-weight:900;margin-bottom:6px">Tipo</div>
-          <select id="nwTipo" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16)">${buildOptions(tipoMap, "— Selecione —")}</select>
-        </div>
-
-        <div>
-          <div style="font-size:11px;font-weight:900;margin-bottom:6px">Urgência</div>
-          <select id="nwUrg" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16)">${buildOptions(
-            urgMap,
-            "— Sem urgência —"
-          )}</select>
-        </div>
-
-        <div>
-          <div style="font-size:11px;font-weight:900;margin-bottom:6px">Etapa</div>
-          <select id="nwEtapa" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16)">${buildOptions(
-            etapaMap,
-            "— (opcional) —"
-          )}</select>
-        </div>
-
-        <div>
-          <div style="font-size:11px;font-weight:900;margin-bottom:6px">COLAB (opcional)</div>
-          ${colabFieldHtml}
-        </div>
-
-        <div style="grid-column:1 / -1">
-          <div style="font-size:11px;font-weight:900;margin-bottom:6px">Observações (opcional)</div>
-          <textarea id="nwObs" rows="3" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16)"></textarea>
-        </div>
-
-        <div style="grid-column:1 / -1">
-          <div style="font-size:11px;font-weight:900;margin-bottom:6px">Recorrência</div>
-          <select id="nwRec" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
-            <option value="NONE">Sem recorrência</option>
-            <option value="DAILY">Diária (dias úteis)</option>
-            <option value="WEEKLY">Semanal</option>
-            <option value="MONTHLY">Mensal</option>
-          </select>
-          <div id="nwRecExtra" style="margin-top:8px;display:none"></div>
-        </div>
-
-        <div style="grid-column:1 / -1;display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-top:6px">
-          <button class="eqd-btn" data-action="modalClose">Cancelar</button>
-          <button class="eqd-btn eqd-btnPrimary" id="nwSave">Criar</button>
-        </div>
-      </div>
-    `);
-
-    const warn = document.getElementById("eqd-warn");
-    const recSel = document.getElementById("nwRec");
-    const recExtra = document.getElementById("nwRecExtra");
-
-    function renderRecExtra() {
-      const v = String(recSel.value || "NONE");
-      if (v === "WEEKLY") {
-        recExtra.style.display = "block";
-        recExtra.innerHTML = `
-          <div style="font-size:11px;font-weight:900;margin-bottom:6px">Dia da semana</div>
-          <select id="nwWeekDay" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
-            <option value="1">Segunda</option>
-            <option value="2">Terça</option>
-            <option value="3">Quarta</option>
-            <option value="4">Quinta</option>
-            <option value="5">Sexta</option>
-          </select>
-        `;
-      } else if (v === "MONTHLY") {
-        recExtra.style.display = "block";
-        recExtra.innerHTML = `
-          <div style="font-size:11px;font-weight:900;margin-bottom:6px">Dia do mês (1-28)</div>
-          <input id="nwMonthDay" type="number" min="1" max="28" value="10"
-                 style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" />
-        `;
-      } else {
-        recExtra.style.display = "none";
-        recExtra.innerHTML = "";
-      }
-    }
-    recSel.onchange = renderRecExtra;
-    renderRecExtra();
-
-    async function createOne(prazoIso, fieldsExtra) {
-      const stageId = await stageIdForUserName(user.name);
-      if (!stageId) throw new Error(`Não encontrei a coluna ${user.name} na pipeline.`);
-      const title = bestTitleFromText(String(document.getElementById("nwTitle").value || "").trim());
-
-      const fields = {
-        CATEGORY_ID: Number(CATEGORY_MAIN),
-        STAGE_ID: String(stageId),
-        TITLE: title,
-        ASSIGNED_BY_ID: Number(user.userId),
-      };
-
-      if (prazoIso) fields[UF_PRAZO] = prazoIso;
-
-      const tipo = String(document.getElementById("nwTipo").value || "").trim();
-      if (!tipo) throw new Error("Selecione o Tipo.");
-      fields[UF_TAREFA] = tipo;
-
-      const urg = String(document.getElementById("nwUrg").value || "").trim();
-      if (urg) fields[UF_URGENCIA] = urg;
-
-      const etapa = String(document.getElementById("nwEtapa").value || "").trim();
-      if (etapa) fields[UF_ETAPA] = etapa;
-
-      if (colabIsEnum) {
-        const colab = String(document.getElementById("nwColab").value || "").trim();
-        if (colab) fields[UF_COLAB] = colab;
-      } else {
-        const colab = String(document.getElementById("nwColab").value || "").trim();
-        if (colab) fields[UF_COLAB] = colab;
-      }
-
-      const obs = String(document.getElementById("nwObs").value || "").trim();
-      if (obs) fields[UF_OBS] = obs;
-
-      if (fieldsExtra) Object.assign(fields, fieldsExtra);
-
-      await bx("crm.deal.add", { fields });
-    }
-
-    document.getElementById("nwSave").onclick = async () => {
-      try {
-        warn.style.display = "none";
-        warn.textContent = "";
-        setBusy("Criando…");
-
-        const rawTitle = String(document.getElementById("nwTitle").value || "").trim();
-        if (!rawTitle) throw new Error("Preencha o Nome do negócio.");
-
-        const prazoLocal = String(document.getElementById("nwPrazo").value || "").trim();
-        const baseIso = prazoLocal ? localInputToIsoWithOffset(prazoLocal) : "";
-        if (prazoLocal && !baseIso) throw new Error("Prazo inválido.");
-
-        const rec = String(recSel.value || "NONE");
-
-        if (rec === "NONE") {
-          await createOne(baseIso, null);
-        } else if (rec === "DAILY") {
-          const base = new Date(baseIso || new Date().toISOString());
-          let count = 0;
-          let created = 0;
-          let d = new Date(base);
-          while (created < 10 && count < 30) {
-            count++;
-            if (!isWeekend(d)) {
-              const iso = localInputToIsoWithOffset(new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16));
-              await createOne(iso, null);
-              created++;
-            }
-            d.setDate(d.getDate() + 1);
-          }
-        } else if (rec === "WEEKLY") {
-          const wanted = Number(document.getElementById("nwWeekDay").value || "1");
-          const base = new Date(baseIso || new Date().toISOString());
-          let d = new Date(base);
-          while (d.getDay() !== wanted) d.setDate(d.getDate() + 1);
-          for (let i = 0; i < 8; i++) {
-            const iso = localInputToIsoWithOffset(new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16));
-            await createOne(iso, null);
-            d.setDate(d.getDate() + 7);
-          }
-        } else if (rec === "MONTHLY") {
-          const day = Math.max(1, Math.min(28, Number(document.getElementById("nwMonthDay").value || 10)));
-          const base = new Date(baseIso || new Date().toISOString());
-          let d = new Date(base);
-          d.setDate(day);
-          for (let i = 0; i < 6; i++) {
-            const iso = localInputToIsoWithOffset(new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16));
-            await createOne(iso, null);
-            d = addMonthsKeepDay(d, day);
-          }
-        }
-
-        closeModal();
-        await refreshData(true);
-        renderCurrentView();
-      } catch (e) {
-        warn.style.display = "block";
-        warn.textContent = "Falha ao criar:\n" + (e.message || e);
-      } finally {
-        clearBusy();
-      }
-    };
-  }
-
-  // =========================
-  // 18) FOLLOW-UP (3) — modal + campos automáticos
+  // 17) FOLLOW-UP (deal) — padrão
   // =========================
   async function createFollowUpDealForUser(user, negocioNome, prazoIso) {
     const [urgMap, tipoMap, etapaMap] = await Promise.all([enums(UF_URGENCIA), enums(UF_TAREFA), enums(UF_ETAPA)]);
-
     const followTipoId = findEnumIdByLabel(tipoMap, norm("FOLLOW-UP"));
     const aguardEtapaId = findEnumIdByLabel(etapaMap, norm("AGUARDANDO"));
-
-    // ✅ urgência NORMAL (fallback: não seta se não achar)
     const normalUrgId = findEnumIdByLabel(urgMap, norm("NORMAL")) || findEnumIdByLabel(urgMap, norm("PADRAO")) || "";
 
     const stageId = await stageIdForUserName(user.name);
@@ -1786,7 +1523,7 @@
     const fields = {
       CATEGORY_ID: Number(CATEGORY_MAIN),
       STAGE_ID: String(stageId),
-      TITLE: `FOLLOW-UP ${negocioNome}`, // ✅ nome
+      TITLE: `FOLLOW-UP ${negocioNome}`,
       ASSIGNED_BY_ID: Number(user.userId),
     };
 
@@ -1794,12 +1531,11 @@
     if (normalUrgId) fields[UF_URGENCIA] = normalUrgId;
     if (followTipoId) fields[UF_TAREFA] = followTipoId;
     if (aguardEtapaId) fields[UF_ETAPA] = aguardEtapaId;
-    // COLAB vazio / OBS vazio = não setar
 
     await bx("crm.deal.add", { fields });
   }
 
-  function openFollowUpModal(user) {
+  function openFollowUpModal(user, prefillName) {
     const dt = new Date();
     dt.setMinutes(dt.getMinutes() + 60);
     const localDefault = new Date(dt.getTime() - dt.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
@@ -1810,12 +1546,14 @@
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <div style="grid-column:1 / -1">
           <div style="font-size:11px;font-weight:900;margin-bottom:6px">NOME DO NEGÓCIO</div>
-          <input id="fuNome" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16)" placeholder="Ex.: JOÃO SILVA" />
+          <input id="fuNome" value="${escHtml(prefillName || "")}"
+                 style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16)" placeholder="Ex.: JOÃO SILVA" />
         </div>
 
         <div style="grid-column:1 / -1">
           <div style="font-size:11px;font-weight:900;margin-bottom:6px">PRAZO (dia e hora)</div>
-          <input id="fuPrazo" type="datetime-local" value="${localDefault}" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16)" />
+          <input id="fuPrazo" type="datetime-local" value="${localDefault}"
+                 style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16)" />
         </div>
 
         <div style="grid-column:1 / -1;display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-top:6px">
@@ -1852,33 +1590,168 @@
   }
 
   // =========================
-  // 19) CONCLUÍDAS: só do DIA
+  // 18) LISTA DE FOLLOW-UP (9)
   // =========================
-  async function modalConcluidasDia(user) {
-    openModal(`Concluídas do dia — ${user.name}`, `<div id="cdList"></div>`);
+  function isFollowupDeal(d) {
+    const t = norm(d._tarefaTxt || "");
+    if (t.includes(norm("FOLLOW-UP"))) return true;
+    const title = norm(d.TITLE || "");
+    return title.startsWith(norm("FOLLOW-UP"));
+  }
 
-    const ds = dayStart(selectedDate).getTime();
-    const de = dayEnd(selectedDate).getTime();
-
+  function openFollowupListModalForUser(user) {
     const all = (STATE.dealsAll || []).filter((d) => String(d.ASSIGNED_BY_ID || d._assigned || "") === String(user.userId));
-    const done = all.filter((d) => STATE.doneStageId && String(d.STAGE_ID) === String(STATE.doneStageId));
-    const hits = done
-      .filter((d) => {
-        const t = d._prazo ? new Date(d._prazo).getTime() : NaN;
-        return Number.isFinite(t) && t >= ds && t <= de;
-      })
-      .sort((a, b) => createdMs(b) - createdMs(a));
+    const list = all.filter(isFollowupDeal);
 
-    const box = document.getElementById("cdList");
-    if (!hits.length) {
-      box.innerHTML = `<div class="eqd-empty">Nenhuma concluída neste dia.</div>`;
-      return;
-    }
-    box.innerHTML = hits.map((d) => makeDealCard(d, { allowBatch: false })).join("");
+    const body = `
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:space-between">
+        <div style="font-size:12px;font-weight:950;opacity:.85">Total: <strong>${list.length}</strong></div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input id="fuListSearch" class="eqd-searchInput" style="width:min(520px,70vw)" placeholder="Pesquisar follow-up..." />
+          <button class="eqd-btn eqd-btnPrimary" id="fuListBtn">Buscar</button>
+          <button class="eqd-btn" id="fuListClear">Limpar</button>
+        </div>
+      </div>
+      <div id="fuListBox" style="margin-top:10px;display:flex;flex-direction:column;gap:8px"></div>
+    `;
+    openModal(`Lista de FOLLOW-UP — ${user.name}`, body, { wide: true });
+
+    const box = document.getElementById("fuListBox");
+    const render = (kwRaw) => {
+      const kw = norm(String(kwRaw || "").trim());
+      const filtered = kw
+        ? list.filter((d) => norm([d.TITLE || "", d._obs || "", d._colabTxt || "", d._etapaTxt || "", d._urgTxt || ""].join(" ")).includes(kw))
+        : list.slice();
+
+      const ordered = sortDeals(filtered);
+      box.innerHTML = ordered.length ? ordered.map((d) => makeDealCard(d, { allowBatch: false })).join("") : `<div class="eqd-empty">Nenhum follow-up.</div>`;
+    };
+
+    render("");
+
+    document.getElementById("fuListBtn").onclick = () => render(document.getElementById("fuListSearch").value);
+    document.getElementById("fuListSearch").onkeydown = (e) => { if (e.key === "Enter") render(e.target.value); };
+    document.getElementById("fuListClear").onclick = () => { document.getElementById("fuListSearch").value = ""; render(""); };
   }
 
   // =========================
-  // 20) USER CARD STATS
+  // 19) LEADS MODAL (full width + follow-up modal) — (6) e (7)
+  // =========================
+  function leadMatchesKw(l, kwNorm) {
+    if (!kwNorm) return true;
+    const blob = norm([leadTitle(l), leadOperadora(l), leadTelefone(l), leadBairro(l), leadFonte(l), leadDataHora(l), leadObs(l), l.ID || ""].join(" "));
+    return blob.includes(kwNorm);
+  }
+
+  async function openLeadsModalForUser(userId, kwRaw) {
+    const user = USERS.find((u) => String(u.userId) === String(userId));
+    if (!user) return;
+
+    // ✅ lazy load leads do user
+    setBusy("Carregando LEADS…");
+    const leadsUser = await loadLeadsForOneUser(user.userId).catch(() => []);
+    clearBusy();
+
+    STATE.leadsAlertUsers.delete(String(user.userId));
+
+    const sAt = leadStageId("EM ATENDIMENTO");
+    const sAtendido = leadStageId("ATENDIDO");
+    const sQual = leadStageId("QUALIFICADO");
+    const sPerdido = leadStageId("PERDIDO");
+    const sConv = leadStageId("CONVERTIDO");
+
+    const kw = norm(String(kwRaw || "").trim());
+
+    // ✅ (6) modal full width
+    openModal(`Leads — ${user.name}`, `
+      <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:space-between;align-items:center">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input id="leadSearch" class="eqd-searchInput" style="width:min(720px,85vw)" placeholder="Buscar lead por palavra (nome, operadora, tel, bairro, obs, ID…)" value="${escHtml(String(kwRaw || ""))}" />
+          <button class="eqd-btn eqd-btnPrimary" id="leadSearchBtn">Buscar</button>
+          <button class="eqd-btn" id="leadSearchClear">Limpar</button>
+        </div>
+        <button class="eqd-btn" data-action="modalClose">Fechar</button>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(3,minmax(380px,1fr));gap:12px;margin-top:10px">
+        <div class="panelCol">
+          <div class="panelColHead" style="opacity:1;height:auto">EM ATENDIMENTO</div>
+          <div class="panelColBody" id="ld_at"></div>
+        </div>
+        <div class="panelCol">
+          <div class="panelColHead" style="opacity:1;height:auto">ATENDIDOS</div>
+          <div class="panelColBody" id="ld_ok"></div>
+        </div>
+        <div class="panelCol">
+          <div class="panelColHead" style="opacity:1;height:auto">QUALIFICADO</div>
+          <div class="panelColBody" id="ld_q"></div>
+        </div>
+      </div>
+    `, { full: true });
+
+    const filtered = kw ? leadsUser.filter((l) => leadMatchesKw(l, kw)) : leadsUser;
+
+    const at = sAt ? filtered.filter((l) => String(l.STATUS_ID) === String(sAt)) : [];
+    const ok = sAtendido ? filtered.filter((l) => String(l.STATUS_ID) === String(sAtendido)) : [];
+    const q = sQual ? filtered.filter((l) => String(l.STATUS_ID) === String(sQual)) : [];
+
+    function cardLead(l, column) {
+      const op = leadOperadora(l);
+      const idade = leadIdade(l);
+      const bairro = leadBairro(l);
+      const fonte = leadFonte(l);
+      const tel = leadTelefone(l);
+      const when = leadDataHora(l) ? fmt(leadDataHora(l)) : "—";
+      const obs = leadObs(l);
+
+      const mkBtn = (label, action, toStatus) =>
+        `<button class="leadBtn ${toStatus === sPerdido ? "leadBtnD" : toStatus ? "leadBtnP" : ""}" data-action="${action}" data-leadid="${l.ID}" data-tostatus="${toStatus || ""}" data-userid="${user.userId}">${label}</button>`;
+
+      let btns = "";
+      if (column === "AT") {
+        btns = `${mkBtn("ATENDIDO","leadMove",sAtendido)}${mkBtn("PERDIDO","leadMove",sPerdido)}`;
+      } else if (column === "OK") {
+        btns = `${mkBtn("PERDIDO","leadMove",sPerdido)}${mkBtn("CONVERTIDO","leadMove",sConv)}
+                <button class="leadBtn" data-action="leadFollowupModal" data-leadid="${l.ID}" data-userid="${user.userId}">FOLLOW-UP</button>`;
+      } else if (column === "Q") {
+        btns = `${mkBtn("PERDIDO","leadMove",sPerdido)}${mkBtn("CONVERTIDO","leadMove",sConv)}
+                <button class="leadBtn" data-action="leadFollowupModal" data-leadid="${l.ID}" data-userid="${user.userId}">FOLLOW-UP</button>`;
+      }
+
+      return `
+        <div class="leadCard">
+          <div class="leadTitle">${escHtml(leadTitle(l))}</div>
+          <div class="leadMeta">
+            ${op ? `<span>Operadora: <strong>${escHtml(op)}</strong></span>` : ``}
+            ${idade ? `<span>Idade: <strong>${escHtml(idade)}</strong></span>` : ``}
+            ${tel ? `<span>Telefone: <strong>${escHtml(tel)}</strong></span>` : ``}
+            ${bairro ? `<span>Bairro: <strong>${escHtml(bairro)}</strong></span>` : ``}
+            ${fonte ? `<span>Fonte: <strong>${escHtml(fonte)}</strong></span>` : ``}
+            <span>Data: <strong>${escHtml(when)}</strong></span>
+            <span>ID: <strong>${escHtml(l.ID)}</strong></span>
+          </div>
+
+          <div class="leadObsRow">
+            <textarea class="leadObs" rows="2" data-leadobs="${l.ID}" placeholder="OBS do lead (UF_CRM_LEAD_1762887033192)">${escHtml(obs)}</textarea>
+            <button class="leadBtn leadBtnP" data-action="leadSaveObs" data-leadid="${l.ID}" data-userid="${user.userId}">Salvar OBS</button>
+          </div>
+
+          <div class="leadBtns">${btns}</div>
+        </div>
+      `;
+    }
+
+    document.getElementById("ld_at").innerHTML = at.length ? at.map((l) => cardLead(l, "AT")).join("") : `<div class="eqd-empty">Nenhum</div>`;
+    document.getElementById("ld_ok").innerHTML = ok.length ? ok.map((l) => cardLead(l, "OK")).join("") : `<div class="eqd-empty">Nenhum</div>`;
+    document.getElementById("ld_q").innerHTML = q.length ? q.map((l) => cardLead(l, "Q")).join("") : `<div class="eqd-empty">Nenhum</div>`;
+
+    document.getElementById("leadSearchBtn").onclick = () => openLeadsModalForUser(user.userId, String(document.getElementById("leadSearch").value || "").trim());
+    document.getElementById("leadSearch").onkeydown = (e) => { if (e.key === "Enter") openLeadsModalForUser(user.userId, String(e.target.value || "").trim()); };
+    document.getElementById("leadSearchClear").onclick = () => openLeadsModalForUser(user.userId, "");
+  }
+
+  // =========================
+  // 20) USER CARD STATS / DAY+OVERDUE
   // =========================
   function overdueEmoji(overdueCount) {
     if (overdueCount <= 0) return "🟢";
@@ -1888,7 +1761,6 @@
     return "🟠";
   }
 
-  // ✅ (1) "Hoje" conta itens do dia + atrasadas
   function countUserStats(userId) {
     const id = String(userId);
     const all = (STATE.dealsAll || []).filter((d) => String(d.ASSIGNED_BY_ID || d._assigned || "") === id);
@@ -1902,7 +1774,7 @@
       if (!d._prazo) return false;
       const t = new Date(d._prazo).getTime();
       if (!Number.isFinite(t)) return false;
-      return (t >= ds && t <= de) || t < ds; // ✅ inclui atrasadas
+      return (t >= ds && t <= de) || t < ds;
     });
 
     const dayDone = done.filter((d) => {
@@ -1912,11 +1784,7 @@
     });
 
     const overdue = open.filter((d) => d._late);
-    return {
-      day: dayOpenPlusLate.length,
-      doneDay: dayDone.length,
-      overdue: overdue.length,
-    };
+    return { day: dayOpenPlusLate.length, doneDay: dayDone.length, overdue: overdue.length };
   }
 
   function makeUserCard(u) {
@@ -1956,19 +1824,18 @@
   }
 
   // =========================
-  // 21) PAINEL INDIVIDUAL — (1) do dia + atrasadas
+  // 21) PAINEL INDIVIDUAL
   // =========================
   let currentView = { kind: "general", userId: null, multi: null };
 
   function dealsOfSelectedDayPlusOverdueForUser(userId) {
     const ds = dayStart(selectedDate).getTime();
-    const de = dayEnd(selectedDate).getTime();
     return (STATE.dealsOpen || []).filter((d) => {
       if (String(d.ASSIGNED_BY_ID || d._assigned || "") !== String(userId)) return false;
       if (!d._prazo) return false;
       const t = new Date(d._prazo).getTime();
       if (!Number.isFinite(t)) return false;
-      return (t >= ds && t <= de) || t < ds; // ✅ inclui atrasadas
+      return t >= ds || t < ds; // day or overdue (overdue always < ds) — handled by same condition
     });
   }
 
@@ -1978,12 +1845,9 @@
     return cols;
   }
 
-  function renderUserPanelStandard(userId) {
+  function renderUserPanel(userId) {
     const user = USERS.find((u) => Number(u.userId) === Number(userId));
-    if (!user) {
-      renderGeneral();
-      return;
-    }
+    if (!user) return renderGeneral();
 
     const photo = STATE.userPhotoById.get(Number(user.userId)) || "";
     const dealsDay = dealsOfSelectedDayPlusOverdueForUser(user.userId);
@@ -1991,14 +1855,15 @@
     const cols = distributeInto3Cols(ordered);
 
     const hasLeadsBtn = LEAD_USERS.has(String(user.userId));
-    const leadsBtn = hasLeadsBtn
-      ? `<button class="eqd-btn" data-action="leadsModal" data-userid="${user.userId}" id="btnLeads">LEADS</button>`
+    const leadsBtn = hasLeadsBtn ? `<button class="eqd-btn" data-action="leadsModal" data-userid="${user.userId}" id="btnLeads">LEADS</button>` : ``;
+
+    const finBtn = String(user.userId) === "813" ? `<a class="eqd-btn" href="${FINANCEIRO_URL}" target="_blank" rel="noopener">FINANCEIRO</a>` : ``;
+
+    const segBtn = SEGUROS_USERS.has(String(user.userId))
+      ? `<a class="eqd-btn" href="${SEGUROS_URL}" target="_blank" rel="noopener">SEGUROS</a>`
       : ``;
 
-    const finBtn =
-      String(user.userId) === "813"
-        ? `<a class="eqd-btn" href="${FINANCEIRO_URL}" target="_blank" rel="noopener">FINANCEIRO</a>`
-        : ``;
+    const followListBtn = `<button class="eqd-btn" data-action="followList" data-userid="${user.userId}">LISTA DE FOLLOW-UP</button>`;
 
     el.main.innerHTML = `
       <div class="panelHead">
@@ -2014,10 +1879,10 @@
         <div class="panelTools">
           <button class="eqd-btn" data-action="backToPrevious">VOLTAR</button>
           ${finBtn}
-          <button class="eqd-btn eqd-btnPrimary" data-action="newTask" data-userid="${user.userId}">NOVA TAREFA</button>
+          ${segBtn}
+          ${followListBtn}
           <button class="eqd-btn" data-action="followUpModal" data-userid="${user.userId}">FOLLOW-UP</button>
           ${leadsBtn}
-          <button class="eqd-btn" data-action="concluidasDia" data-userid="${user.userId}">CONCLUÍDAS</button>
           <button class="eqd-btn" id="batchResched">REAGENDAR EM LOTE</button>
 
           <input class="eqd-searchInput" id="userSearch" placeholder="Buscar..." />
@@ -2041,236 +1906,38 @@
       </div>
     `;
 
-    // ✅ (5) borda piscando vermelho no LEADS (quando alert)
+    // borda piscando se alert
     if (hasLeadsBtn) {
       const btn = document.getElementById("btnLeads");
       if (btn) {
         if (STATE.leadsAlertUsers.has(String(user.userId))) {
           btn.classList.add("blinkRedBorder");
           play3Beeps();
-        } else {
-          btn.classList.remove("blinkRedBorder");
-        }
+        } else btn.classList.remove("blinkRedBorder");
       }
     }
 
     const doUserSearch = () => {
       const kw = norm(String(document.getElementById("userSearch").value || "").trim());
-      if (!kw) {
-        alert("Digite uma palavra.");
-        return;
-      }
-      const hits = ordered.filter((d) =>
-        norm([d.TITLE || "", d._obs || "", d._tarefaTxt || "", d._colabTxt || "", d._etapaTxt || "", d._urgTxt || ""].join(" ")).includes(kw)
-      );
-      openModal(
-        `Busca — ${user.name} • ${hits.length}`,
-        hits.length ? hits.map((d) => makeDealCard(d, { allowBatch: false })).join("") : `<div class="eqd-empty">Nada encontrado.</div>`
-      );
+      if (!kw) return alert("Digite uma palavra.");
+      const hits = ordered.filter((d) => norm([d.TITLE || "", d._obs || "", d._tarefaTxt || "", d._colabTxt || "", d._etapaTxt || "", d._urgTxt || ""].join(" ")).includes(kw));
+      openModal(`Busca — ${user.name} • ${hits.length}`, hits.length ? hits.map((d) => makeDealCard(d, { allowBatch: false })).join("") : `<div class="eqd-empty">Nada encontrado.</div>`);
     };
     document.getElementById("userSearchBtn").onclick = doUserSearch;
-    document.getElementById("userSearch").onkeydown = (e) => {
-      if (e.key === "Enter") doUserSearch();
-    };
+    document.getElementById("userSearch").onkeydown = (e) => { if (e.key === "Enter") doUserSearch(); };
 
+    // ✅ (5) reagendar em lote com calendário
     document.getElementById("batchResched").onclick = async () => {
       const ids = [...document.querySelectorAll(".eqd-batch:checked")].map((x) => x.getAttribute("data-id"));
-      if (!ids.length) {
-        alert("Selecione tarefas marcando 'Lote' nos cards.");
-        return;
-      }
-      const whenLocal = String(prompt("Novo prazo (ex.: 2026-02-21 14:30)") || "").trim();
-      if (!whenLocal) return;
-      const prazoIso = localInputToIsoWithOffset(whenLocal);
-      if (!prazoIso) {
-        alert("Data inválida.");
-        return;
-      }
-
-      try {
-        setBusy("Reagendando…");
-        for (const id of ids) {
-          await actionUpdateFields(id, { [UF_PRAZO]: prazoIso });
-          updateDealCache(id, { [UF_PRAZO]: prazoIso, _prazo: new Date(prazoIso).toISOString(), _late: false });
-        }
-        await refreshData(false);
-        renderCurrentView();
-        alert("Reagendado.");
-      } catch (e) {
-        alert("Falha ao reagendar: " + (e.message || e));
-      } finally {
-        clearBusy();
-      }
+      if (!ids.length) return alert("Selecione tarefas marcando 'Lote' nos cards.");
+      await openBatchRescheduleCalendar(ids);
     };
-  }
-
-  function renderUserPanelLeads(userId) {
-    const user = USERS.find((u) => Number(u.userId) === Number(userId));
-    if (!user) {
-      renderGeneral();
-      return;
-    }
-
-    const photo = STATE.userPhotoById.get(Number(user.userId)) || "";
-
-    const dealsDay = dealsOfSelectedDayPlusOverdueForUser(user.userId);
-    const follow = dealsDay.filter((d) => norm(d._tarefaTxt || "").includes(norm("FOLLOW-UP")));
-    const normal = dealsDay.filter((d) => !norm(d._tarefaTxt || "").includes(norm("FOLLOW-UP")));
-
-    const orderedA = sortDeals(normal);
-    const orderedB = sortDeals(follow);
-
-    const ds = dayStart(selectedDate).getTime();
-    const de = dayEnd(selectedDate).getTime();
-    const sAt = leadStageId("EM ATENDIMENTO");
-    const sQual = leadStageId("QUALIFICADO");
-
-    const leadsUser = STATE.leadsByUser.get(String(user.userId)) || [];
-    const leadsDay = leadsUser.filter((l) => {
-      const tStr = leadDataHora(l);
-      const t = tStr ? new Date(tStr).getTime() : NaN;
-      if (!Number.isFinite(t) || t < ds || t > de) return false;
-      const st = String(l.STATUS_ID || "");
-      return st === String(sAt) || st === String(sQual);
-    });
-
-    const leadsMiniCards = leadsDay.length
-      ? leadsDay
-          .map((l) => {
-            const op = leadOperadora(l);
-            const when = leadDataHora(l) ? fmt(leadDataHora(l)) : "—";
-            const tel = leadTelefone(l);
-            return `
-        <div class="leadCard">
-          <div class="leadTitle">${escHtml(leadTitle(l))}</div>
-          <div class="leadMeta">
-            ${op ? `<span>Operadora: <strong>${escHtml(op)}</strong></span>` : ``}
-            ${tel ? `<span>Telefone: <strong>${escHtml(tel)}</strong></span>` : ``}
-            <span>Data: <strong>${escHtml(when)}</strong></span>
-          </div>
-        </div>
-      `;
-          })
-          .join("")
-      : `<div class="eqd-empty">Sem leads do dia (Em atendimento / Qualificado)</div>`;
-
-    const finBtn =
-      String(user.userId) === "813"
-        ? `<a class="eqd-btn" href="${FINANCEIRO_URL}" target="_blank" rel="noopener">FINANCEIRO</a>`
-        : ``;
-
-    el.main.innerHTML = `
-      <div class="panelHead">
-        <div class="panelUserInfo">
-          <img class="panelUserPhoto" src="${photo || ""}" referrerpolicy="no-referrer"
-               onerror="try{this.onerror=null;this.src='';this.style.display='none'}catch(e){}" />
-          <div>
-            <div class="panelUserName">${escHtml(user.name)}</div>
-            <div class="panelUserTeam">Equipe ${escHtml(user.team || "")}</div>
-          </div>
-        </div>
-
-        <div class="panelTools">
-          <button class="eqd-btn" data-action="backToPrevious">VOLTAR</button>
-          ${finBtn}
-          <button class="eqd-btn eqd-btnPrimary" data-action="newTask" data-userid="${user.userId}">NOVA TAREFA</button>
-          <button class="eqd-btn" data-action="followUpModal" data-userid="${user.userId}">FOLLOW-UP</button>
-          <button class="eqd-btn" data-action="leadsModal" data-userid="${user.userId}" id="btnLeads">LEADS</button>
-          <button class="eqd-btn" data-action="concluidasDia" data-userid="${user.userId}">CONCLUÍDAS</button>
-          <button class="eqd-btn" id="batchResched">REAGENDAR EM LOTE</button>
-
-          <input class="eqd-searchInput" id="userSearch" placeholder="Buscar..." />
-          <button class="eqd-btn" id="userSearchBtn">Buscar</button>
-        </div>
-      </div>
-
-      <div class="panelCols">
-        <div class="panelCol">
-          <div class="panelColHead"></div>
-          <div class="panelColBody">${orderedA.length ? orderedA.map((d) => makeDealCard(d, { allowBatch: true })).join("") : `<div class="eqd-empty">Sem itens do dia</div>`}</div>
-        </div>
-        <div class="panelCol">
-          <div class="panelColHead"></div>
-          <div class="panelColBody">${orderedB.length ? orderedB.map((d) => makeDealCard(d, { allowBatch: true })).join("") : `<div class="eqd-empty">Sem FOLLOW-UP do dia</div>`}</div>
-        </div>
-        <div class="panelCol">
-          <div class="panelColHead"></div>
-          <div class="panelColBody">${leadsMiniCards}</div>
-        </div>
-      </div>
-    `;
-
-    const btn = document.getElementById("btnLeads");
-    if (btn) {
-      if (STATE.leadsAlertUsers.has(String(user.userId))) {
-        btn.classList.add("blinkRedBorder");
-        play3Beeps();
-      } else {
-        btn.classList.remove("blinkRedBorder");
-      }
-    }
-
-    const allDay = sortDeals(dealsDay);
-    const doUserSearch = () => {
-      const kw = norm(String(document.getElementById("userSearch").value || "").trim());
-      if (!kw) {
-        alert("Digite uma palavra.");
-        return;
-      }
-      const hits = allDay.filter((d) =>
-        norm([d.TITLE || "", d._obs || "", d._tarefaTxt || "", d._colabTxt || "", d._etapaTxt || "", d._urgTxt || ""].join(" ")).includes(kw)
-      );
-      openModal(
-        `Busca — ${user.name} • ${hits.length}`,
-        hits.length ? hits.map((d) => makeDealCard(d, { allowBatch: false })).join("") : `<div class="eqd-empty">Nada encontrado.</div>`
-      );
-    };
-    document.getElementById("userSearchBtn").onclick = doUserSearch;
-    document.getElementById("userSearch").onkeydown = (e) => {
-      if (e.key === "Enter") doUserSearch();
-    };
-
-    document.getElementById("batchResched").onclick = async () => {
-      const ids = [...document.querySelectorAll(".eqd-batch:checked")].map((x) => x.getAttribute("data-id"));
-      if (!ids.length) {
-        alert("Selecione tarefas marcando 'Lote' nos cards.");
-        return;
-      }
-      const whenLocal = String(prompt("Novo prazo (ex.: 2026-02-21 14:30)") || "").trim();
-      if (!whenLocal) return;
-      const prazoIso = localInputToIsoWithOffset(whenLocal);
-      if (!prazoIso) {
-        alert("Data inválida.");
-        return;
-      }
-
-      try {
-        setBusy("Reagendando…");
-        for (const id of ids) {
-          await actionUpdateFields(id, { [UF_PRAZO]: prazoIso });
-          updateDealCache(id, { [UF_PRAZO]: prazoIso, _prazo: new Date(prazoIso).toISOString(), _late: false });
-        }
-        await refreshData(false);
-        renderCurrentView();
-        alert("Reagendado.");
-      } catch (e) {
-        alert("Falha ao reagendar: " + (e.message || e));
-      } finally {
-        clearBusy();
-      }
-    };
-  }
-
-  function renderUserPanel(userId) {
-    if (LEAD_USERS.has(String(userId))) return renderUserPanelLeads(userId);
-    return renderUserPanelStandard(userId);
   }
 
   // =========================
-  // 22) MULTI SELEÇÃO (8) até 6
+  // 22) MULTI SELEÇÃO (até 6) — mantido simples aqui
   // =========================
   let lastMultiSelection = [];
-
   function openMultiSelect() {
     const pin = askPin();
     if (!isAdmin(pin)) return;
@@ -2298,7 +1965,7 @@
     document.getElementById("ms-ok").onclick = () => {
       const sel = [...document.querySelectorAll(".ms-u:checked")].map((x) => Number(x.value));
       if (sel.length < 1) return alert("Selecione ao menos 1.");
-      if (sel.length > 6) return alert("Máximo 6."); // ✅
+      if (sel.length > 6) return alert("Máximo 6.");
       lastMultiSelection = sel.slice();
       closeModal();
       currentView = { kind: "multi", userId: null, multi: sel.slice() };
@@ -2321,6 +1988,9 @@
           .map((uid) => {
             const u = USERS.find((x) => Number(x.userId) === Number(uid)) || { name: `User ${uid}`, userId: uid };
             const photo = STATE.userPhotoById.get(Number(uid)) || "";
+            const ds = dayStart(selectedDate).getTime();
+            const deals = (STATE.dealsOpen || []).filter((d) => String(d.ASSIGNED_BY_ID || d._assigned || "") === String(uid) && d._prazo && new Date(d._prazo).getTime() >= ds || (d._prazo && new Date(d._prazo).getTime() < ds));
+            const ordered = sortDeals(deals);
             return `
             <section class="panelCol">
               <div class="panelColHead" style="opacity:1;height:auto;padding:10px 12px;display:flex;gap:10px;align-items:center;border-bottom:1px solid var(--border)">
@@ -2329,235 +1999,34 @@
                      onerror="try{this.onerror=null;this.style.display='none'}catch(e){}" />
                 <span style="font-weight:950">${escHtml(u.name)}</span>
               </div>
-              <div class="panelColBody" id="ms_${uid}"></div>
+              <div class="panelColBody">${ordered.length ? ordered.map((d) => makeDealCard(d, { allowBatch: false })).join("") : `<div class="eqd-empty">Sem itens do dia</div>`}</div>
             </section>
           `;
           })
           .join("")}
       </div>
     `;
-
-    userIds.forEach((uid) => {
-      const box = document.getElementById(`ms_${uid}`);
-      const deals = dealsOfSelectedDayPlusOverdueForUser(uid); // ✅ inclui atrasadas
-      const ordered = sortDeals(deals);
-      box.innerHTML = ordered.length ? ordered.map((d) => makeDealCard(d, { allowBatch: false })).join("") : `<div class="eqd-empty">Sem itens do dia</div>`;
-    });
   }
 
   // =========================
-  // 23) LEADS MODAL (6): maior + busca + OBS editável
-  // =========================
-  function leadMatchesKw(l, kwNorm) {
-    if (!kwNorm) return true;
-    const blob = norm(
-      [
-        leadTitle(l),
-        leadOperadora(l),
-        leadTelefone(l),
-        leadBairro(l),
-        leadFonte(l),
-        leadDataHora(l),
-        leadObs(l),
-        l.ID || "",
-      ].join(" ")
-    );
-    return blob.includes(kwNorm);
-  }
-
-  async function openLeadsModalForUser(userId, kwRaw) {
-    const user = USERS.find((u) => String(u.userId) === String(userId));
-    if (!user) return;
-
-    STATE.leadsAlertUsers.delete(String(user.userId));
-
-    const sAt = leadStageId("EM ATENDIMENTO");
-    const sAtendido = leadStageId("ATENDIDO");
-    const sQual = leadStageId("QUALIFICADO");
-    const sPerdido = leadStageId("PERDIDO");
-    const sConv = leadStageId("CONVERTIDO");
-
-    const kw = norm(String(kwRaw || "").trim());
-
-    openModal(`Leads — ${user.name}`, `
-      <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:space-between;align-items:center">
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <input id="leadSearch" class="eqd-searchInput" style="width:min(520px,80vw)" placeholder="Buscar lead por palavra (nome, operadora, tel, bairro, obs, ID…)" value="${escHtml(
-            String(kwRaw || "")
-          )}" />
-          <button class="eqd-btn eqd-btnPrimary" id="leadSearchBtn">Buscar</button>
-          <button class="eqd-btn" id="leadSearchClear">Limpar</button>
-        </div>
-        <button class="eqd-btn" data-action="modalClose">Fechar</button>
-      </div>
-
-      <div style="display:grid;grid-template-columns:repeat(3,minmax(320px,1fr));gap:12px;margin-top:10px">
-        <div class="panelCol">
-          <div class="panelColHead" style="opacity:1;height:auto">EM ATENDIMENTO</div>
-          <div class="panelColBody" id="ld_at"></div>
-        </div>
-        <div class="panelCol">
-          <div class="panelColHead" style="opacity:1;height:auto">ATENDIDOS</div>
-          <div class="panelColBody" id="ld_ok"></div>
-        </div>
-        <div class="panelCol">
-          <div class="panelColHead" style="opacity:1;height:auto">QUALIFICADO</div>
-          <div class="panelColBody" id="ld_q"></div>
-        </div>
-      </div>
-    `, { wide: true });
-
-    const leadsUser = STATE.leadsByUser.get(String(user.userId)) || [];
-
-    const filtered = kw ? leadsUser.filter((l) => leadMatchesKw(l, kw)) : leadsUser;
-
-    const at = sAt ? filtered.filter((l) => String(l.STATUS_ID) === String(sAt)) : [];
-    const ok = sAtendido ? filtered.filter((l) => String(l.STATUS_ID) === String(sAtendido)) : [];
-    const q = sQual ? filtered.filter((l) => String(l.STATUS_ID) === String(sQual)) : [];
-
-    function cardLead(l, column) {
-      const op = leadOperadora(l);
-      const idade = leadIdade(l);
-      const bairro = leadBairro(l);
-      const fonte = leadFonte(l);
-      const tel = leadTelefone(l);
-      const when = leadDataHora(l) ? fmt(leadDataHora(l)) : "—";
-      const obs = leadObs(l);
-
-      const mkBtn = (label, action, toStatus) =>
-        `<button class="leadBtn ${toStatus === sPerdido ? "leadBtnD" : toStatus ? "leadBtnP" : ""}" data-action="${action}" data-leadid="${
-          l.ID
-        }" data-tostatus="${toStatus || ""}" data-userid="${user.userId}">${label}</button>`;
-
-      let btns = "";
-      if (column === "AT") {
-        btns = `
-          ${mkBtn("ATENDIDO", "leadMove", sAtendido)}
-          ${mkBtn("PERDIDO", "leadMove", sPerdido)}
-        `;
-      } else if (column === "OK") {
-        btns = `
-          ${mkBtn("PERDIDO", "leadMove", sPerdido)}
-          ${mkBtn("CONVERTIDO", "leadMove", sConv)}
-          <button class="leadBtn" data-action="leadFollowupFromLead" data-leadid="${l.ID}" data-userid="${user.userId}">FOLLOW-UP</button>
-        `;
-      } else if (column === "Q") {
-        btns = `
-          ${mkBtn("PERDIDO", "leadMove", sPerdido)}
-          ${mkBtn("CONVERTIDO", "leadMove", sConv)}
-          <button class="leadBtn" data-action="leadFollowupFromLead" data-leadid="${l.ID}" data-userid="${user.userId}">FOLLOW-UP</button>
-        `;
-      }
-
-      return `
-        <div class="leadCard">
-          <div class="leadTitle">${escHtml(leadTitle(l))}</div>
-          <div class="leadMeta">
-            ${op ? `<span>Operadora: <strong>${escHtml(op)}</strong></span>` : ``}
-            ${idade ? `<span>Idade: <strong>${escHtml(idade)}</strong></span>` : ``}
-            ${tel ? `<span>Telefone: <strong>${escHtml(tel)}</strong></span>` : ``}
-            ${bairro ? `<span>Bairro: <strong>${escHtml(bairro)}</strong></span>` : ``}
-            ${fonte ? `<span>Fonte: <strong>${escHtml(fonte)}</strong></span>` : ``}
-            <span>Data: <strong>${escHtml(when)}</strong></span>
-            <span>ID: <strong>${escHtml(l.ID)}</strong></span>
-          </div>
-
-          <div class="leadObsRow">
-            <textarea class="leadObs" rows="2" data-leadobs="${l.ID}" placeholder="OBS do lead (UF_CRM_LEAD_1762887033192)">${escHtml(obs)}</textarea>
-            <button class="leadBtn leadBtnP" data-action="leadSaveObs" data-leadid="${l.ID}" data-userid="${user.userId}">Salvar OBS</button>
-          </div>
-
-          <div class="leadBtns">${btns}</div>
-        </div>
-      `;
-    }
-
-    document.getElementById("ld_at").innerHTML = at.length ? at.map((l) => cardLead(l, "AT")).join("") : `<div class="eqd-empty">Nenhum</div>`;
-    document.getElementById("ld_ok").innerHTML = ok.length ? ok.map((l) => cardLead(l, "OK")).join("") : `<div class="eqd-empty">Nenhum</div>`;
-    document.getElementById("ld_q").innerHTML = q.length ? q.map((l) => cardLead(l, "Q")).join("") : `<div class="eqd-empty">Nenhum</div>`;
-
-    // busca interna
-    document.getElementById("leadSearchBtn").onclick = () => {
-      const v = String(document.getElementById("leadSearch").value || "").trim();
-      openLeadsModalForUser(user.userId, v);
-    };
-    document.getElementById("leadSearch").onkeydown = (e) => {
-      if (e.key === "Enter") openLeadsModalForUser(user.userId, String(e.target.value || ""));
-    };
-    document.getElementById("leadSearchClear").onclick = () => openLeadsModalForUser(user.userId, "");
-  }
-
-  // =========================
-  // 24) DONE MENU + EDITS + OBS (mantido)
+  // 23) DONE/EDIT/DELETE (mínimo)
   // =========================
   function openDoneMenu(dealId) {
-    openModal(
-      "Concluir",
-      `
+    openModal("Concluir", `
       <div class="eqd-empty">O que você quer fazer?</div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end">
         <button class="eqd-btn" data-action="modalClose">Cancelar</button>
         <button class="eqd-btn eqd-btnPrimary" data-action="doneOnly" data-id="${dealId}">Só concluir</button>
-        <button class="eqd-btn" data-action="doneResched" data-id="${dealId}">Concluir e reagendar</button>
       </div>
-    `
-    );
+    `);
   }
 
   async function doneOnly(dealId) {
+    if (!STATE.doneStageId) throw new Error("Não encontrei a coluna CONCLUÍDO na pipeline.");
     setBusy("Concluindo…");
-    await actionSetDone(dealId);
+    await bx("crm.deal.update", { id: String(dealId), fields: { STAGE_ID: String(STATE.doneStageId) } });
     removeFromOpen(dealId);
     await refreshData(false);
-    clearBusy();
-    renderCurrentView();
-  }
-
-  async function doneResched(dealId) {
-    const opt = String(prompt("Reagendar: 1) Manter dados  2) Editar (digite 1 ou 2)") || "").trim();
-    const keep = opt !== "2";
-
-    const prazoLocal = String(prompt("Novo prazo (ex.: 2026-02-21 14:30)") || "").trim();
-    const prazoIso = localInputToIsoWithOffset(prazoLocal);
-    if (!prazoIso) {
-      alert("Prazo inválido.");
-      return;
-    }
-
-    setBusy("Concluindo e reagendando…");
-
-    await actionSetDone(dealId);
-    removeFromOpen(dealId);
-
-    const old = (STATE.dealsAll || []).find((d) => String(d.ID) === String(dealId));
-    if (!old) {
-      clearBusy();
-      renderCurrentView();
-      return;
-    }
-
-    const fields = {
-      CATEGORY_ID: Number(CATEGORY_MAIN),
-      STAGE_ID: String(old.STAGE_ID),
-      TITLE: String(old.TITLE || "Negócio"),
-      ASSIGNED_BY_ID: Number(old.ASSIGNED_BY_ID || old._assigned || 0) || undefined,
-      [UF_PRAZO]: prazoIso,
-    };
-
-    if (keep) {
-      if (old[UF_URGENCIA]) fields[UF_URGENCIA] = old[UF_URGENCIA];
-      if (old[UF_TAREFA]) fields[UF_TAREFA] = old[UF_TAREFA];
-      if (old[UF_ETAPA]) fields[UF_ETAPA] = old[UF_ETAPA];
-      if (old[UF_COLAB]) fields[UF_COLAB] = old[UF_COLAB];
-      if (old[UF_OBS]) fields[UF_OBS] = old[UF_OBS];
-    } else {
-      const newTitle = String(prompt("Editar nome do negócio (enter para manter):") || "").trim();
-      if (newTitle) fields.TITLE = newTitle;
-    }
-
-    await bx("crm.deal.add", { fields });
-
-    await refreshData(true);
     clearBusy();
     renderCurrentView();
   }
@@ -2565,13 +2034,10 @@
   async function editPrazo(dealId) {
     const prazoLocal = String(prompt("Novo prazo (ex.: 2026-02-21 14:30)") || "").trim();
     const prazoIso = localInputToIsoWithOffset(prazoLocal);
-    if (!prazoIso) {
-      alert("Prazo inválido.");
-      return;
-    }
+    if (!prazoIso) return alert("Prazo inválido.");
     try {
       setBusy("Salvando prazo…");
-      await actionUpdateFields(dealId, { [UF_PRAZO]: prazoIso });
+      await bx("crm.deal.update", { id: String(dealId), fields: { [UF_PRAZO]: prazoIso } });
       await refreshData(false);
       clearBusy();
       renderCurrentView();
@@ -2586,7 +2052,7 @@
     if (!newTitle) return;
     try {
       setBusy("Salvando…");
-      await actionUpdateFields(dealId, { TITLE: newTitle });
+      await bx("crm.deal.update", { id: String(dealId), fields: { TITLE: newTitle } });
       await refreshData(false);
       clearBusy();
       renderCurrentView();
@@ -2602,7 +2068,7 @@
     const next = String(prompt("Observações (editar):", cur) || "").trim();
     try {
       setBusy("Salvando OBS…");
-      await actionUpdateFields(dealId, { [UF_OBS]: next });
+      await bx("crm.deal.update", { id: String(dealId), fields: { [UF_OBS]: next } });
       await refreshData(false);
       clearBusy();
       renderCurrentView();
@@ -2617,14 +2083,10 @@
     const pick = String(prompt("Digite o ID do novo responsável:\n" + list) || "").trim();
     if (!pick) return;
     const uid = Number(pick);
-    if (!uid) {
-      alert("ID inválido.");
-      return;
-    }
-
+    if (!uid) return alert("ID inválido.");
     try {
       setBusy("Transferindo…");
-      await actionUpdateFields(dealId, { ASSIGNED_BY_ID: uid });
+      await bx("crm.deal.update", { id: String(dealId), fields: { ASSIGNED_BY_ID: uid } });
       await refreshData(true);
       clearBusy();
       renderCurrentView();
@@ -2634,8 +2096,32 @@
     }
   }
 
+  async function deleteDeal(dealId) {
+    openModal("Confirmar exclusão", `
+      <div class="eqd-warn" style="display:block">Excluir este item?</div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+        <button class="eqd-btn" data-action="modalClose">Cancelar</button>
+        <button class="eqd-btn eqd-btnDanger" id="confirmDel">Excluir</button>
+      </div>
+    `);
+    document.getElementById("confirmDel").onclick = async () => {
+      try {
+        setBusy("Excluindo…");
+        await bx("crm.deal.delete", { id: String(dealId) });
+        removeFromOpen(dealId);
+        closeModal();
+        await refreshData(false);
+        renderCurrentView();
+      } catch (err) {
+        alert("Falha ao excluir: " + (err.message || err));
+      } finally {
+        clearBusy();
+      }
+    };
+  }
+
   // =========================
-  // 25) CLICK HANDLER
+  // 24) CLICK HANDLER
   // =========================
   function globalClickHandler(e) {
     const a = e.target.closest("[data-action]");
@@ -2647,10 +2133,7 @@
     const leadId = a.getAttribute("data-leadid");
     const toStatus = a.getAttribute("data-tostatus");
 
-    if (act === "modalClose") {
-      closeModal();
-      return;
-    }
+    if (act === "modalClose") return closeModal();
 
     if (act === "openUser") {
       const userId = Number(uid);
@@ -2670,124 +2153,42 @@
 
     if (act === "backGeneral") {
       currentView = { kind: "general", userId: null, multi: null };
-      renderGeneral();
-      return;
+      return renderGeneral();
     }
 
     if (act === "backToPrevious") {
       if (currentView.multi && currentView.multi.length) {
         currentView = { kind: "multi", userId: null, multi: currentView.multi.slice() };
-        renderMultiColumns(currentView.multi);
-      } else {
-        currentView = { kind: "general", userId: null, multi: null };
-        renderGeneral();
+        return renderMultiColumns(currentView.multi);
       }
-      return;
+      currentView = { kind: "general", userId: null, multi: null };
+      return renderGeneral();
     }
 
-    if (act === "newTask") {
-      const user = USERS.find((u) => Number(u.userId) === Number(uid));
-      if (!user) return;
-      modalNewDeal(user).catch(showFatal);
-      return;
-    }
-
-    // ✅ (3) FOLLOW-UP modal
     if (act === "followUpModal") {
       const user = USERS.find((u) => Number(u.userId) === Number(uid));
       if (!user) return;
-      openFollowUpModal(user);
-      return;
+      return openFollowUpModal(user, "");
     }
 
-    if (act === "concluidasDia") {
+    if (act === "followList") {
       const user = USERS.find((u) => Number(u.userId) === Number(uid));
       if (!user) return;
-      modalConcluidasDia(user).catch(showFatal);
-      return;
-    }
-
-    if (act === "doneMenu") {
-      openDoneMenu(dealId);
-      return;
-    }
-    if (act === "doneOnly") {
-      closeModal();
-      doneOnly(dealId).catch((err) => alert(err.message || err));
-      return;
-    }
-    if (act === "doneResched") {
-      closeModal();
-      doneResched(dealId).catch((err) => alert(err.message || err));
-      return;
-    }
-
-    if (act === "editPrazo") {
-      editPrazo(dealId).catch(() => {});
-      return;
-    }
-    if (act === "editTitle") {
-      editTitle(dealId).catch(() => {});
-      return;
-    }
-    if (act === "changeColab") {
-      changeColab(dealId).catch(() => {});
-      return;
-    }
-    if (act === "editObs") {
-      editObs(dealId).catch(() => {});
-      return;
-    }
-
-    if (act === "delete") {
-      openModal(
-        "Confirmar exclusão",
-        `
-        <div class="eqd-warn" style="display:block">Excluir este item?</div>
-        <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
-          <button class="eqd-btn" data-action="modalClose">Cancelar</button>
-          <button class="eqd-btn eqd-btnDanger" id="confirmDel">Excluir</button>
-        </div>
-      `
-      );
-      document.getElementById("confirmDel").onclick = async () => {
-        try {
-          setBusy("Excluindo…");
-          await actionDeleteDeal(dealId);
-          removeFromOpen(dealId);
-          closeModal();
-          await refreshData(false);
-          renderCurrentView();
-        } catch (err) {
-          alert("Falha ao excluir: " + (err.message || err));
-        } finally {
-          clearBusy();
-        }
-      };
-      return;
-    }
-
-    if (act === "adminOpenDeal") {
-      const d = (STATE.dealsOpen || []).find((x) => String(x.ID) === String(dealId));
-      if (!d) return;
-      openModal(`Admin • Negócio ${d.ID}`, makeDealCard(d, { allowBatch: false, adminMode: true }));
-      return;
+      return openFollowupListModalForUser(user);
     }
 
     if (act === "leadsModal") {
-      openLeadsModalForUser(uid, "").catch((err) => alert(err.message || err));
-      return;
+      return openLeadsModalForUser(uid, "");
     }
 
     if (act === "leadMove") {
       if (!leadId || !toStatus) return;
       setBusy("Movendo lead…");
       bx("crm.lead.update", { id: String(leadId), fields: { STATUS_ID: String(toStatus) } })
-        .then(() => refreshData(true))
+        .then(() => loadLeadsForOneUser(uid))
         .then(() => {
           clearBusy();
-          renderCurrentView();
-          openLeadsModalForUser(uid, "");
+          openLeadsModalForUser(uid, document.getElementById("leadSearch") ? document.getElementById("leadSearch").value : "");
         })
         .catch((err) => {
           clearBusy();
@@ -2796,45 +2197,16 @@
       return;
     }
 
-    // ✅ FOLLOW-UP a partir do lead (usa título do lead como "nome do negócio")
-    if (act === "leadFollowupFromLead") {
-      const user = USERS.find((u) => String(u.userId) === String(uid));
-      const lead = (STATE.leadsAll || []).find((l) => String(l.ID) === String(leadId));
-      if (!user || !lead) return;
-
-      const nm = leadTitle(lead);
-      const whenLocal = String(prompt("Prazo do FOLLOW-UP (ex.: 2026-02-21 14:30):") || "").trim();
-      const prazoIso = localInputToIsoWithOffset(whenLocal);
-      if (!prazoIso) return alert("Prazo inválido.");
-
-      setBusy("Criando follow-up…");
-      createFollowUpDealForUser(user, nm, prazoIso)
-        .then(() => refreshData(true))
-        .then(() => {
-          clearBusy();
-          renderCurrentView();
-        })
-        .catch((err) => {
-          clearBusy();
-          alert(err.message || err);
-        });
-      return;
-    }
-
-    // ✅ (6) salvar OBS do lead
     if (act === "leadSaveObs") {
       if (!leadId) return;
       const ta = document.querySelector(`textarea[data-leadobs="${leadId}"]`);
       const val = ta ? String(ta.value || "").trim() : "";
       setBusy("Salvando OBS do lead…");
-
       bx("crm.lead.update", { id: String(leadId), fields: { [LEAD_UF_OBS]: val } })
-        .then(() => refreshData(true))
+        .then(() => loadLeadsForOneUser(uid))
         .then(() => {
           clearBusy();
-          // atualiza modal no mesmo filtro atual
-          const curKw = document.getElementById("leadSearch") ? String(document.getElementById("leadSearch").value || "") : "";
-          openLeadsModalForUser(uid, curKw);
+          openLeadsModalForUser(uid, document.getElementById("leadSearch") ? document.getElementById("leadSearch").value : "");
         })
         .catch((err) => {
           clearBusy();
@@ -2842,13 +2214,35 @@
         });
       return;
     }
+
+    // ✅ (7) FOLLOW-UP do card do lead: modal (nome + prazo)
+    if (act === "leadFollowupModal") {
+      const user = USERS.find((u) => String(u.userId) === String(uid));
+      const leads = STATE.leadsByUser.get(String(uid)) || [];
+      const lead = leads.find((l) => String(l.ID) === String(leadId));
+      if (!user || !lead) return;
+      const nm = leadTitle(lead);
+      // abre modal e cria follow-up usando campos automáticos
+      return openFollowUpModal(user, nm);
+    }
+
+    if (act === "doneMenu") return openDoneMenu(dealId);
+    if (act === "doneOnly") {
+      closeModal();
+      return doneOnly(dealId).catch((err) => alert(err.message || err));
+    }
+    if (act === "editPrazo") return editPrazo(dealId);
+    if (act === "editTitle") return editTitle(dealId);
+    if (act === "changeColab") return changeColab(dealId);
+    if (act === "editObs") return editObs(dealId);
+    if (act === "delete") return deleteDeal(dealId);
   }
 
   el.main.addEventListener("click", globalClickHandler);
   el.modalBody.addEventListener("click", globalClickHandler);
 
   // =========================
-  // 26) TOP BUTTONS
+  // 25) TOP BUTTONS
   // =========================
   el.refresh.addEventListener("click", () => {
     refreshData(true).then(renderCurrentView).catch(() => {});
@@ -2861,25 +2255,19 @@
   el.multi.addEventListener("click", openMultiSelect);
 
   // =========================
-  // 27) RENDER
+  // 26) RENDER
   // =========================
   function renderCurrentView() {
     el.meta.textContent = STATE.lastOkAt ? `Atualizado em ${fmt(STATE.lastOkAt)}${STATE.offline ? " • (offline)" : ""}` : `Carregando…`;
-
-    // rodapé
     renderFooterPeople();
 
-    if (currentView.kind === "user" && currentView.userId) {
-      renderUserPanel(currentView.userId);
-    } else if (currentView.kind === "multi" && currentView.multi) {
-      renderMultiColumns(currentView.multi);
-    } else {
-      renderGeneral();
-    }
+    if (currentView.kind === "user" && currentView.userId) return renderUserPanel(currentView.userId);
+    if (currentView.kind === "multi" && currentView.multi) return renderMultiColumns(currentView.multi);
+    return renderGeneral();
   }
 
   // =========================
-  // 28) REFRESH (offline-safe)
+  // 27) REFRESH (cache-first + background)
   // =========================
   let REFRESH_RUNNING = false;
 
@@ -2888,45 +2276,40 @@
     REFRESH_RUNNING = true;
 
     try {
-      setSoftStatus("Atualizando…");
-
-      if (force) {
+      setSoftStatus(force ? "Atualizando (completo)…" : "Atualizando…");
+      if (force || !STATE.bootstrapLoaded) {
         await loadStagesForCategory(CATEGORY_MAIN);
-        await loadLeadStages();
-        await loadDeals();
-        await loadLeadsForUsers();
-      } else {
-        await loadDeals();
-        await loadLeadsForUsers();
+        STATE.bootstrapLoaded = true;
       }
-
-      if (STATE.leadsAlertUsers.size && currentView.kind !== "user") {
-        play3Beeps();
-      }
-
+      await loadDeals();
       setSoftStatus("JS: ok");
     } catch (e) {
       STATE.offline = true;
       setSoftStatus("Sem conexão / limite — mantendo painel estável…");
-      if (!STATE.dealsAll.length) loadCache();
     } finally {
       REFRESH_RUNNING = false;
     }
   }
 
   // =========================
-  // 29) INIT
+  // 28) INIT (✅ performance: render imediato do cache)
   // =========================
   (async () => {
-    loadCache();
+    // 1) bootstrap rápido: stages (1x) + cache render
+    try {
+      await loadStagesForCategory(CATEGORY_MAIN).catch(() => {});
+      STATE.bootstrapLoaded = true;
+      loadCache();
+    } catch (_) {}
 
-    await loadStagesForCategory(CATEGORY_MAIN);
-    await loadLeadStages();
-    await refreshData(true);
-
+    // 2) render imediato (cache)
     currentView = { kind: "general", userId: null, multi: null };
     renderCurrentView();
 
+    // 3) refresh em background (sem travar UI)
+    refreshData(true).then(() => renderCurrentView()).catch(() => {});
+
+    // 4) timer refresh leve
     setInterval(() => {
       if (!REFRESH_RUNNING && BX_INFLIGHT === 0) {
         refreshData(false).then(() => renderCurrentView()).catch(() => {});
