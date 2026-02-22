@@ -1,8 +1,19 @@
-/* eqd.js — GET • CGD CORRETORA (ATUALIZAÇÃO v3 performance + pedidos)
-   Performance:
-   - Render instantâneo via cache + atualização em background
-   - LEADS lazy-load (só quando abre modal)
-   - Fotos cache + busca apenas se faltar
+/* eqd.js — GET • CGD CORRETORA (ATUALIZAÇÃO v4 — fixes solicitados)
+   ✅ v4 inclui (sem quebrar o que já funciona):
+   1) EDITAR sem prompt: tudo em MODAL (editar título/prazo/obs) + OBS tag abre o mesmo modal
+   2) Rodapé: 1 linha itálico em inglês: "System created by GRUPO CGD" (sem título SISTEMA)
+   3) Rodapé +20% extra (altura, fonte, fotos) + padding-bottom ajustado
+   4) Calendário normal e reagendar em lote: duplo clique fecha e leva para o dia / conclui corretamente
+   5) Lista de FOLLOW-UP: não mostra antigos (últimos 10 dias)
+   6) Painel individual: colunas fixas (NEGÓCIOS | FOLLOW-UP | LEADS ATENDIDOS)
+   7) Logo superior redonda
+   8) Concluir: opções "Concluir" e "Concluir e reagendar" (com calendário duplo clique, mantém horário)
+
+   Mantido:
+   - cache-first render + refresh em background
+   - LEADS lazy-load
+   - Multi seleção até 6
+   - Botões INTRANET/VENDAS/FINANCEIRO/SEGUROS/LISTA FOLLOW-UP
 */
 
 (function () {
@@ -18,7 +29,7 @@
   const FINANCEIRO_URL = "https://cgdcorretorabase.bitrix24.site/financeiro1997";
   const SEGUROS_URL = "https://getcgdcorretora.bitrix24.site/seguros/";
 
-  const REFRESH_MS = 20000;
+  const REFRESH_MS = 30000; // ✅ mais estável e reduz travamentos
 
   const ADMIN_PINS = new Set(["4455", "8123", "6677", "4627"]);
 
@@ -48,7 +59,7 @@
   ];
 
   const LEAD_USERS = new Set(["15", "19", "17", "23", "811", "3081", "3079", "3083", "3085", "3389"]);
-  const SEGUROS_USERS = new Set(["815", "269", "29", "3101"]); // ✅ (8)
+  const SEGUROS_USERS = new Set(["815", "269", "29", "3101"]); // ✅ SEGUROS
 
   // ✅ Rodapé: sócios (Bitrix USER IDs)
   const FOOTER_PARTNERS = [
@@ -132,7 +143,7 @@
 
       min-height: 100vh;
       padding: 14px;
-      padding-bottom: 102px; /* ✅ rodapé +20% */
+      padding-bottom: 132px; /* ✅ rodapé maior (extra +20%) */
       font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial;
       color: var(--text);
 
@@ -150,7 +161,15 @@
       padding:12px;border-radius:18px;
     }
     .eqd-titleWrap{display:flex;align-items:center;gap:12px;min-width:320px;}
-    .eqd-logo{width:60px;height:60px;border-radius:16px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.92);object-fit:contain;padding:8px;flex:0 0 auto;}
+    .eqd-logo{
+      width:60px;height:60px;
+      border-radius:999px !important; /* ✅ logo redonda */
+      border:1px solid rgba(255,255,255,.14);
+      background:rgba(255,255,255,.92);
+      object-fit:contain;
+      padding:8px;
+      flex:0 0 auto;
+    }
     .eqd-titleBlock{display:flex;flex-direction:column;gap:2px;}
     .eqd-title{display:flex;align-items:center;gap:10px;font-weight:950;font-size:18px;color:#fff;}
     .eqd-dot{width:10px;height:10px;border-radius:999px;background:#16a34a;box-shadow:0 0 0 6px rgba(22,163,74,.12);}
@@ -168,7 +187,7 @@
     .eqd-searchSelect{border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.10);border-radius:999px;padding:8px 10px;font-size:12px;font-weight:950;outline:none;min-width:170px;color:#fff;}
     .eqd-searchSelect option{color:#111;background:#fff;}
 
-    /* ✅ (3) Modo escuro: preto suave/cinzento */
+    /* ✅ Modo escuro: preto suave/cinzento */
     #eqd-app.eqd-dark{
       --bgA:#121418; --bgB:#0f1115; --bgC:#121418;
       --border: rgba(255,255,255,.10);
@@ -241,6 +260,8 @@
       color:#111;
     }
     #eqd-app:not(.eqd-dark) .panelTools .eqd-searchInput::placeholder{color:rgba(0,0,0,.55)}
+    /* ✅ Busca painel individual: letra preta enquanto digita */
+    #eqd-app:not(.eqd-dark) #userSearch{ color:#111 !important; }
 
     .panelTools .eqd-searchInput{width:min(280px,48vw);}
 
@@ -256,7 +277,7 @@
       display:flex;flex-direction:column;
     }
     #eqd-app.eqd-dark .panelCol{background:rgba(255,255,255,.06);}
-    .panelColHead{padding:8px 12px;border-bottom:1px solid var(--border);font-weight:950;font-size:12px;opacity:.0;height:10px;}
+    .panelColHead{padding:8px 12px;border-bottom:1px solid var(--border);font-weight:950;font-size:12px;opacity:1;height:auto;}
     .panelColBody{padding:10px;display:flex;flex-direction:column;gap:8px;overflow:auto;}
 
     .eqd-modalOverlay{position:fixed;inset:0;background:rgba(10,14,22,.35);backdrop-filter:blur(6px);display:none;align-items:center;justify-content:center;padding:16px;z-index:99999;}
@@ -269,7 +290,6 @@
       overflow:hidden;display:flex;flex-direction:column;
     }
     .eqd-modal.wide{width:min(1280px,98vw);max-height:92vh;}
-    /* ✅ (6) full-width modal */
     .eqd-modal.full{width:calc(100vw - 24px);max-width:none;max-height:calc(100vh - 24px);}
     #eqd-app.eqd-dark .eqd-modal{background:rgba(25,28,34,.92);border-color:rgba(255,255,255,.10);color:var(--text);}
     .eqd-modalHead{padding:12px 14px;display:flex;justify-content:space-between;align-items:center;gap:10px;border-bottom:1px solid rgba(30,40,70,.12);background:rgba(255,255,255,.82);}
@@ -313,6 +333,7 @@
     #eqd-app.eqd-dark .leadObs{background:rgba(255,255,255,.10);color:var(--text);border-color:rgba(255,255,255,.14)}
     .leadObsRow{display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;margin-top:6px}
     .leadObsRow .leadBtn{margin-left:auto}
+
     .blinkRedBorder{
       border-color: rgba(255,45,70,.85) !important;
       box-shadow: 0 0 0 2px rgba(255,45,70,.55) inset;
@@ -341,23 +362,23 @@
     .calCell.today{box-shadow:0 0 0 2px rgba(22,163,74,.35) inset}
     .calCell.sel{box-shadow:0 0 0 2px rgba(120,90,255,.55) inset}
 
-    /* ✅ (2) rodapé +20% */
+    /* ✅ rodapé +20% extra */
     .eqd-footer{
       position:fixed;left:0;right:0;bottom:0;
       z-index:9999;
       background:rgba(20,22,26,.92);
       color:rgba(255,255,255,.84);
       border-top:1px solid rgba(255,255,255,.10);
-      padding:12px 16px; /* +20% */
+      padding:16px 20px; /* ✅ +20% extra */
       display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap;
-      font-size:12px; /* +20% */
+      font-size:14px; /* ✅ +20% extra */
       font-weight:850;
       backdrop-filter: blur(10px);
     }
     .eqd-footerLeft{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
     .eqd-footerPeople{display:flex;gap:10px;align-items:center}
     .eqd-footAvatar{
-      width:32px;height:32px;border-radius:999px;object-fit:cover; /* +20% */
+      width:38px;height:38px;border-radius:999px;object-fit:cover; /* ✅ +20% extra */
       border:1px solid rgba(255,255,255,.14);
       background:rgba(255,255,255,.10);
     }
@@ -561,30 +582,6 @@
     return `${y}-${m}-${d}T${pad(hh)}:${pad(mm)}:00${sign}${oh}:${om}`;
   }
 
-  function isWeekend(d) {
-    const day = d.getDay();
-    return day === 0 || day === 6;
-  }
-
-  function addMonthsKeepDay(baseDate, dayOfMonth) {
-    const d = new Date(baseDate);
-    d.setMonth(d.getMonth() + 1);
-    d.setDate(1);
-    const maxDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-    d.setDate(Math.min(dayOfMonth, maxDay));
-    return d;
-  }
-
-  function isUrgenteText(urgTxt) {
-    const u = norm(urgTxt);
-    if (!u) return false;
-    if (u.includes("ATEN")) return false;
-    return u.includes("URG");
-  }
-  function isAtencaoText(urgTxt) {
-    const u = norm(urgTxt);
-    return u.includes("ATEN");
-  }
   function bestTitleFromText(txt) {
     const t = String(txt || "").trim();
     if (!t) return "Negócio";
@@ -602,6 +599,16 @@
     const x = new Date(v);
     const t = x.getTime();
     return Number.isFinite(t) ? t : Number.POSITIVE_INFINITY;
+  }
+  function isUrgenteText(urgTxt) {
+    const u = norm(urgTxt);
+    if (!u) return false;
+    if (u.includes("ATEN")) return false;
+    return u.includes("URG");
+  }
+  function isAtencaoText(urgTxt) {
+    const u = norm(urgTxt);
+    return u.includes("ATEN");
   }
 
   function sortDeals(deals) {
@@ -641,17 +648,23 @@
       g = 0,
       b = 0;
     if (hue < 60) {
-      r = c; g = x;
+      r = c;
+      g = x;
     } else if (hue < 120) {
-      r = x; g = c;
+      r = x;
+      g = c;
     } else if (hue < 180) {
-      g = c; b = x;
+      g = c;
+      b = x;
     } else if (hue < 240) {
-      g = x; b = c;
+      g = x;
+      b = c;
     } else if (hue < 300) {
-      r = x; b = c;
+      r = x;
+      b = c;
     } else {
-      r = c; b = x;
+      r = c;
+      b = x;
     }
     return `${Math.round((r + m) * 255)},${Math.round((g + m) * 255)},${Math.round((b + m) * 255)}`;
   }
@@ -938,7 +951,9 @@
       beep(now + 0.18);
       beep(now + 0.36);
       setTimeout(() => {
-        try { ctx.close(); } catch (_) {}
+        try {
+          ctx.close();
+        } catch (_) {}
       }, 900);
     } catch (_) {}
   }
@@ -965,8 +980,9 @@
       const j = JSON.parse(raw);
       if (!j) return false;
       if (Array.isArray(j.dealsAll)) STATE.dealsAll = j.dealsAll;
-      // rebuild open list quickly
-      STATE.dealsOpen = (STATE.dealsAll || []).filter((d) => !(STATE.doneStageId && String(d.STAGE_ID) === String(STATE.doneStageId)));
+      STATE.dealsOpen = (STATE.dealsAll || []).filter(
+        (d) => !(STATE.doneStageId && String(d.STAGE_ID) === String(STATE.doneStageId))
+      );
       return true;
     } catch (_) {
       return false;
@@ -1008,13 +1024,15 @@
     const parsed = (deals || []).map((d) => parseDeal(d, maps));
     STATE.dealsAll = parsed;
 
-    STATE.dealsOpen = (parsed || []).filter((d) => !(STATE.doneStageId && String(d.STAGE_ID) === String(STATE.doneStageId)));
+    STATE.dealsOpen = (parsed || []).filter(
+      (d) => !(STATE.doneStageId && String(d.STAGE_ID) === String(STATE.doneStageId))
+    );
 
     STATE.lastOkAt = new Date();
     STATE.offline = false;
     saveCache();
 
-    // fotos: só buscar quem não tem cache ainda (economiza)
+    // fotos: só buscar quem não tem cache ainda
     const missing = USERS.filter((u) => !STATE.userPhotoById.has(Number(u.userId)));
     await Promise.all(missing.map((u) => ensureUserPhoto(u.userId, u.name)));
 
@@ -1080,8 +1098,7 @@
             <div class="eqd-footerDim">Av Ayrton Senna, 2500, SS109, Barra da Tijuca</div>
           </div>
           <div class="eqd-footerBlock">
-            <div class="eqd-footerMiniTitle">Sistema</div>
-            <div class="eqd-footerDim">Sistema criado pelo Grupo CGD</div> <!-- ✅ (1) -->
+            <div class="eqd-footerDim"><em>System created by GRUPO CGD</em></div>
           </div>
         </div>
 
@@ -1144,11 +1161,15 @@
     if (on) el.app.classList.add("eqd-dark");
     else el.app.classList.remove("eqd-dark");
     el.darkToggle.textContent = on ? "Modo claro" : "Modo escuro";
-    try { localStorage.setItem(DARK_KEY, on ? "1" : "0"); } catch (_) {}
+    try {
+      localStorage.setItem(DARK_KEY, on ? "1" : "0");
+    } catch (_) {}
   }
   (function initDark() {
     let on = false;
-    try { on = localStorage.getItem(DARK_KEY) === "1"; } catch (_) {}
+    try {
+      on = localStorage.getItem(DARK_KEY) === "1";
+    } catch (_) {}
     applyDark(on);
   })();
   el.darkToggle.addEventListener("click", () => applyDark(!el.app.classList.contains("eqd-dark")));
@@ -1165,7 +1186,7 @@
     el.modalEl.classList.remove("wide");
     el.modalEl.classList.remove("full");
     if (opts && opts.wide) el.modalEl.classList.add("wide");
-    if (opts && opts.full) el.modalEl.classList.add("full"); // ✅
+    if (opts && opts.full) el.modalEl.classList.add("full");
   }
   function closeModal() {
     el.modalOverlay.style.display = "none";
@@ -1182,9 +1203,15 @@
     if (e.key === "Escape") closeModal();
   });
 
-  function setSoftStatus(msg) { el.status.textContent = msg || "JS: ok"; }
-  function setBusy(msg) { el.status.textContent = msg || "Executando…"; }
-  function clearBusy() { el.status.textContent = "JS: ok"; }
+  function setSoftStatus(msg) {
+    el.status.textContent = msg || "JS: ok";
+  }
+  function setBusy(msg) {
+    el.status.textContent = msg || "Executando…";
+  }
+  function clearBusy() {
+    el.status.textContent = "JS: ok";
+  }
 
   // =========================
   // 13) CLOCK
@@ -1192,7 +1219,8 @@
   function tickClock() {
     const d = new Date();
     el.now.textContent = `${fmtDateOnly(d)} • ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(
-      2,"0"
+      2,
+      "0"
     )}:${String(d.getSeconds()).padStart(2, "0")}`;
   }
   setInterval(tickClock, 1000);
@@ -1203,7 +1231,8 @@
   // =========================
   function fillSearchScope() {
     el.searchScope.innerHTML =
-      `<option value="__ALL__">Busca geral</option>` + USERS.map((u) => `<option value="${u.userId}">${escHtml(u.name)}</option>`).join("");
+      `<option value="__ALL__">Busca geral</option>` +
+      USERS.map((u) => `<option value="${u.userId}">${escHtml(u.name)}</option>`).join("");
   }
   fillSearchScope();
 
@@ -1238,6 +1267,7 @@
     if (scope !== "__ALL__") base = base.filter((d) => String(d.ASSIGNED_BY_ID || d._assigned || "") === String(scope));
 
     const hits = base.filter((d) => {
+      // ✅ Título + Obs (sem inverter)
       const blob = norm([d.TITLE || "", d._obs || "", d._tarefaTxt || "", d._colabTxt || "", d._etapaTxt || "", d._urgTxt || ""].join(" "));
       return blob.includes(kw);
     });
@@ -1358,20 +1388,23 @@
       }
     });
 
-    // ✅ (4) duplo clique: fecha e já vai pro dia
+    // ✅ duplo clique: FECHA e já vai pro dia (com stopPropagation)
     host.addEventListener("dblclick", (e) => {
       const a = e.target.closest('[data-action="calPick"]');
       if (!a) return;
+      e.preventDefault();
+      e.stopPropagation();
+
       const d = new Date(a.getAttribute("data-cal"));
-      if (!Number.isNaN(d.getTime())) {
-        selectedDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-        closeModal();
-        renderCurrentView();
-      }
+      if (Number.isNaN(d.getTime())) return;
+
+      selectedDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      closeModal();
+      renderCurrentView();
     });
   }
 
-  // ✅ (5) calendário para reagendar em lote (apenas dia, duplo clique)
+  // ✅ calendário para reagendar em lote (apenas dia, duplo clique, mantém horário)
   async function openBatchRescheduleCalendar(dealIds) {
     calendarCursor = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
     let tempSelected = new Date(selectedDate.getTime());
@@ -1421,13 +1454,15 @@
     host.addEventListener("dblclick", async (e) => {
       const a = e.target.closest('[data-action="calPick"]');
       if (!a) return;
+      e.preventDefault();
+      e.stopPropagation();
+
       const d = new Date(a.getAttribute("data-cal"));
       if (Number.isNaN(d.getTime())) return;
 
       const targetDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
       try {
         setBusy("Reagendando…");
-        // mantém horário individual
         for (const id of dealIds) {
           const deal = (STATE.dealsAll || []).find((x) => String(x.ID) === String(id));
           if (!deal || !deal._prazo) continue;
@@ -1454,6 +1489,13 @@
   // =========================
   // 16) Cards
   // =========================
+  function isFollowupDeal(d) {
+    const t = norm(d._tarefaTxt || "");
+    if (t.includes(norm("FOLLOW-UP"))) return true;
+    const title = norm(d.TITLE || "");
+    return title.startsWith(norm("FOLLOW-UP"));
+  }
+
   function makeDealCard(deal, context) {
     const showWarn = isAtencaoText(deal._urgTxt);
     const title = (showWarn ? "⚠️ " : "") + bestTitleFromText(deal.TITLE || "");
@@ -1462,7 +1504,7 @@
 
     if (isUrgenteText(deal._urgTxt)) tags.push(`<span class="eqd-tag eqd-tagUrg">URGENTE</span>`);
     if (deal._late) tags.push(`<span class="eqd-tag eqd-tagLate">ATRASADA</span>`);
-    if (deal._hasObs) tags.push(`<span class="eqd-tag eqd-tagObs" data-action="editObs" data-id="${deal.ID}">OBS</span>`);
+    if (deal._hasObs) tags.push(`<span class="eqd-tag eqd-tagObs" data-action="editDeal" data-id="${deal.ID}">OBS</span>`);
     if (deal._tarefaTxt) tags.push(`<span class="eqd-tag">Tipo: ${trunc(deal._tarefaTxt, 26)}</span>`);
     if (deal._colabTxt) tags.push(`<span class="eqd-tag">COLAB: ${trunc(deal._colabTxt, 28)}</span>`);
     if (deal._etapaTxt) tags.push(`<span class="eqd-tag">ETAPA: ${trunc(deal._etapaTxt, 18)}</span>`);
@@ -1493,9 +1535,8 @@
           </div>
           <div class="eqd-cardActions">
             <button class="eqd-smallBtn eqd-smallBtnPrimary" data-action="doneMenu" data-id="${deal.ID}">Concluir</button>
-            <button class="eqd-smallBtn" data-action="editPrazo" data-id="${deal.ID}">Editar prazo</button>
-            <button class="eqd-smallBtn" data-action="editTitle" data-id="${deal.ID}">Editar negócio</button>
-            <button class="eqd-smallBtn" data-action="changeColab" data-id="${deal.ID}">Trocar colaboradora</button>
+            <button class="eqd-smallBtn" data-action="editDeal" data-id="${deal.ID}">EDITAR</button>
+            <button class="eqd-smallBtn" data-action="transfer" data-id="${deal.ID}">Trocar colaboradora</button>
             <button class="eqd-smallBtn eqd-smallBtnDanger" data-action="delete" data-id="${deal.ID}">Excluir</button>
           </div>
         </div>
@@ -1540,7 +1581,9 @@
     dt.setMinutes(dt.getMinutes() + 60);
     const localDefault = new Date(dt.getTime() - dt.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 
-    openModal(`FOLLOW-UP — ${user.name}`, `
+    openModal(
+      `FOLLOW-UP — ${user.name}`,
+      `
       <div class="eqd-warn" id="fuWarn"></div>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
@@ -1561,7 +1604,8 @@
           <button class="eqd-btn eqd-btnPrimary" id="fuCreate">Criar FOLLOW-UP</button>
         </div>
       </div>
-    `);
+    `
+    );
 
     const warn = document.getElementById("fuWarn");
     document.getElementById("fuCreate").onclick = async () => {
@@ -1590,22 +1634,24 @@
   }
 
   // =========================
-  // 18) LISTA DE FOLLOW-UP (9)
+  // 18) LISTA DE FOLLOW-UP (sem antigos)
   // =========================
-  function isFollowupDeal(d) {
-    const t = norm(d._tarefaTxt || "");
-    if (t.includes(norm("FOLLOW-UP"))) return true;
-    const title = norm(d.TITLE || "");
-    return title.startsWith(norm("FOLLOW-UP"));
-  }
-
   function openFollowupListModalForUser(user) {
     const all = (STATE.dealsAll || []).filter((d) => String(d.ASSIGNED_BY_ID || d._assigned || "") === String(user.userId));
-    const list = all.filter(isFollowupDeal);
+
+    const tenDaysMs = 10 * 24 * 60 * 60 * 1000;
+    const cutoff = Date.now() - tenDaysMs;
+
+    const list = all
+      .filter(isFollowupDeal)
+      .filter((d) => {
+        const t = new Date(d._prazo || d.DATE_CREATE || 0).getTime();
+        return Number.isFinite(t) && t >= cutoff;
+      });
 
     const body = `
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:space-between">
-        <div style="font-size:12px;font-weight:950;opacity:.85">Total: <strong>${list.length}</strong></div>
+        <div style="font-size:12px;font-weight:950;opacity:.85">Total: <strong>${list.length}</strong> <span style="opacity:.65">(últimos 10 dias)</span></div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <input id="fuListSearch" class="eqd-searchInput" style="width:min(520px,70vw)" placeholder="Pesquisar follow-up..." />
           <button class="eqd-btn eqd-btnPrimary" id="fuListBtn">Buscar</button>
@@ -1630,12 +1676,17 @@
     render("");
 
     document.getElementById("fuListBtn").onclick = () => render(document.getElementById("fuListSearch").value);
-    document.getElementById("fuListSearch").onkeydown = (e) => { if (e.key === "Enter") render(e.target.value); };
-    document.getElementById("fuListClear").onclick = () => { document.getElementById("fuListSearch").value = ""; render(""); };
+    document.getElementById("fuListSearch").onkeydown = (e) => {
+      if (e.key === "Enter") render(e.target.value);
+    };
+    document.getElementById("fuListClear").onclick = () => {
+      document.getElementById("fuListSearch").value = "";
+      render("");
+    };
   }
 
   // =========================
-  // 19) LEADS MODAL (full width + follow-up modal) — (6) e (7)
+  // 19) LEADS MODAL (full width + follow-up modal)
   // =========================
   function leadMatchesKw(l, kwNorm) {
     if (!kwNorm) return true;
@@ -1647,7 +1698,6 @@
     const user = USERS.find((u) => String(u.userId) === String(userId));
     if (!user) return;
 
-    // ✅ lazy load leads do user
     setBusy("Carregando LEADS…");
     const leadsUser = await loadLeadsForOneUser(user.userId).catch(() => []);
     clearBusy();
@@ -1662,8 +1712,9 @@
 
     const kw = norm(String(kwRaw || "").trim());
 
-    // ✅ (6) modal full width
-    openModal(`Leads — ${user.name}`, `
+    openModal(
+      `Leads — ${user.name}`,
+      `
       <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:space-between;align-items:center">
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <input id="leadSearch" class="eqd-searchInput" style="width:min(720px,85vw)" placeholder="Buscar lead por palavra (nome, operadora, tel, bairro, obs, ID…)" value="${escHtml(String(kwRaw || ""))}" />
@@ -1675,19 +1726,21 @@
 
       <div style="display:grid;grid-template-columns:repeat(3,minmax(380px,1fr));gap:12px;margin-top:10px">
         <div class="panelCol">
-          <div class="panelColHead" style="opacity:1;height:auto">EM ATENDIMENTO</div>
+          <div class="panelColHead">EM ATENDIMENTO</div>
           <div class="panelColBody" id="ld_at"></div>
         </div>
         <div class="panelCol">
-          <div class="panelColHead" style="opacity:1;height:auto">ATENDIDOS</div>
+          <div class="panelColHead">ATENDIDOS</div>
           <div class="panelColBody" id="ld_ok"></div>
         </div>
         <div class="panelCol">
-          <div class="panelColHead" style="opacity:1;height:auto">QUALIFICADO</div>
+          <div class="panelColHead">QUALIFICADO</div>
           <div class="panelColBody" id="ld_q"></div>
         </div>
       </div>
-    `, { full: true });
+    `,
+      { full: true }
+    );
 
     const filtered = kw ? leadsUser.filter((l) => leadMatchesKw(l, kw)) : leadsUser;
 
@@ -1709,12 +1762,12 @@
 
       let btns = "";
       if (column === "AT") {
-        btns = `${mkBtn("ATENDIDO","leadMove",sAtendido)}${mkBtn("PERDIDO","leadMove",sPerdido)}`;
+        btns = `${mkBtn("ATENDIDO", "leadMove", sAtendido)}${mkBtn("PERDIDO", "leadMove", sPerdido)}`;
       } else if (column === "OK") {
-        btns = `${mkBtn("PERDIDO","leadMove",sPerdido)}${mkBtn("CONVERTIDO","leadMove",sConv)}
+        btns = `${mkBtn("PERDIDO", "leadMove", sPerdido)}${mkBtn("CONVERTIDO", "leadMove", sConv)}
                 <button class="leadBtn" data-action="leadFollowupModal" data-leadid="${l.ID}" data-userid="${user.userId}">FOLLOW-UP</button>`;
       } else if (column === "Q") {
-        btns = `${mkBtn("PERDIDO","leadMove",sPerdido)}${mkBtn("CONVERTIDO","leadMove",sConv)}
+        btns = `${mkBtn("PERDIDO", "leadMove", sPerdido)}${mkBtn("CONVERTIDO", "leadMove", sConv)}
                 <button class="leadBtn" data-action="leadFollowupModal" data-leadid="${l.ID}" data-userid="${user.userId}">FOLLOW-UP</button>`;
       }
 
@@ -1745,8 +1798,11 @@
     document.getElementById("ld_ok").innerHTML = ok.length ? ok.map((l) => cardLead(l, "OK")).join("") : `<div class="eqd-empty">Nenhum</div>`;
     document.getElementById("ld_q").innerHTML = q.length ? q.map((l) => cardLead(l, "Q")).join("") : `<div class="eqd-empty">Nenhum</div>`;
 
-    document.getElementById("leadSearchBtn").onclick = () => openLeadsModalForUser(user.userId, String(document.getElementById("leadSearch").value || "").trim());
-    document.getElementById("leadSearch").onkeydown = (e) => { if (e.key === "Enter") openLeadsModalForUser(user.userId, String(e.target.value || "").trim()); };
+    document.getElementById("leadSearchBtn").onclick = () =>
+      openLeadsModalForUser(user.userId, String(document.getElementById("leadSearch").value || "").trim());
+    document.getElementById("leadSearch").onkeydown = (e) => {
+      if (e.key === "Enter") openLeadsModalForUser(user.userId, String(e.target.value || "").trim());
+    };
     document.getElementById("leadSearchClear").onclick = () => openLeadsModalForUser(user.userId, "");
   }
 
@@ -1824,25 +1880,21 @@
   }
 
   // =========================
-  // 21) PAINEL INDIVIDUAL
+  // 21) PAINEL INDIVIDUAL — COLUNAS FIXAS
   // =========================
   let currentView = { kind: "general", userId: null, multi: null };
 
   function dealsOfSelectedDayPlusOverdueForUser(userId) {
     const ds = dayStart(selectedDate).getTime();
+    const de = dayEnd(selectedDate).getTime();
     return (STATE.dealsOpen || []).filter((d) => {
       if (String(d.ASSIGNED_BY_ID || d._assigned || "") !== String(userId)) return false;
       if (!d._prazo) return false;
       const t = new Date(d._prazo).getTime();
       if (!Number.isFinite(t)) return false;
-      return t >= ds || t < ds; // day or overdue (overdue always < ds) — handled by same condition
+      // ✅ do dia OU atrasadas (antes do dia)
+      return (t >= ds && t <= de) || t < ds;
     });
-  }
-
-  function distributeInto3Cols(sortedDeals) {
-    const cols = [[], [], []];
-    for (let i = 0; i < sortedDeals.length; i++) cols[i % 3].push(sortedDeals[i]);
-    return cols;
   }
 
   function renderUserPanel(userId) {
@@ -1852,7 +1904,21 @@
     const photo = STATE.userPhotoById.get(Number(user.userId)) || "";
     const dealsDay = dealsOfSelectedDayPlusOverdueForUser(user.userId);
     const ordered = sortDeals(dealsDay);
-    const cols = distributeInto3Cols(ordered);
+
+    // ✅ colunas fixas
+    const colNegocios = ordered.filter((d) => !isFollowupDeal(d));
+    const colFollowup = ordered.filter((d) => isFollowupDeal(d));
+
+    // Leads atendidos: usa cache (não força load). Mostra últimos 10 dias após abrir LEADS 1x.
+    let colLeadsAtendidos = [];
+    const leadsCached = STATE.leadsByUser.get(String(user.userId)) || [];
+    if (leadsCached.length) {
+      const sAtendido = leadStageId("ATENDIDO");
+      const cutoff = Date.now() - 10 * 24 * 60 * 60 * 1000;
+      colLeadsAtendidos = leadsCached
+        .filter((l) => String(l.STATUS_ID) === String(sAtendido))
+        .filter((l) => new Date(l.DATE_MODIFY || l.DATE_CREATE || 0).getTime() >= cutoff);
+    }
 
     const hasLeadsBtn = LEAD_USERS.has(String(user.userId));
     const leadsBtn = hasLeadsBtn ? `<button class="eqd-btn" data-action="leadsModal" data-userid="${user.userId}" id="btnLeads">LEADS</button>` : ``;
@@ -1891,18 +1957,42 @@
       </div>
 
       <div class="panelCols">
-        ${[0, 1, 2]
-          .map(
-            (i) => `
-          <div class="panelCol">
-            <div class="panelColHead"></div>
-            <div class="panelColBody" id="col_${i}">${
-              cols[i].length ? cols[i].map((d) => makeDealCard(d, { allowBatch: true })).join("") : `<div class="eqd-empty">Sem itens do dia</div>`
-            }</div>
+        <div class="panelCol">
+          <div class="panelColHead">NEGÓCIOS / TAREFAS</div>
+          <div class="panelColBody" id="col_0">
+            ${colNegocios.length ? colNegocios.map((d) => makeDealCard(d, { allowBatch: true })).join("") : `<div class="eqd-empty">Sem itens</div>`}
           </div>
-        `
-          )
-          .join("")}
+        </div>
+
+        <div class="panelCol">
+          <div class="panelColHead">FOLLOW-UP</div>
+          <div class="panelColBody" id="col_1">
+            ${colFollowup.length ? colFollowup.map((d) => makeDealCard(d, { allowBatch: true })).join("") : `<div class="eqd-empty">Sem follow-up</div>`}
+          </div>
+        </div>
+
+        <div class="panelCol">
+          <div class="panelColHead">LEADS ATENDIDOS</div>
+          <div class="panelColBody" id="col_2">
+            ${
+              colLeadsAtendidos.length
+                ? colLeadsAtendidos
+                    .map(
+                      (l) => `
+                  <div class="leadCard">
+                    <div class="leadTitle">${escHtml(leadTitle(l))}</div>
+                    <div class="leadMeta">
+                      <span>ID: <strong>${escHtml(l.ID)}</strong></span>
+                      <span>Data: <strong>${escHtml(fmt(leadDataHora(l)))}</strong></span>
+                    </div>
+                  </div>
+                `
+                    )
+                    .join("")
+                : `<div class="eqd-empty">Nenhum lead atendido (últimos 10 dias) no cache. Abra LEADS 1x para carregar.</div>`
+            }
+          </div>
+        </div>
       </div>
     `;
 
@@ -1920,13 +2010,19 @@
     const doUserSearch = () => {
       const kw = norm(String(document.getElementById("userSearch").value || "").trim());
       if (!kw) return alert("Digite uma palavra.");
-      const hits = ordered.filter((d) => norm([d.TITLE || "", d._obs || "", d._tarefaTxt || "", d._colabTxt || "", d._etapaTxt || "", d._urgTxt || ""].join(" ")).includes(kw));
-      openModal(`Busca — ${user.name} • ${hits.length}`, hits.length ? hits.map((d) => makeDealCard(d, { allowBatch: false })).join("") : `<div class="eqd-empty">Nada encontrado.</div>`);
+      const hits = ordered.filter((d) =>
+        norm([d.TITLE || "", d._obs || "", d._tarefaTxt || "", d._colabTxt || "", d._etapaTxt || "", d._urgTxt || ""].join(" ")).includes(kw)
+      );
+      openModal(
+        `Busca — ${user.name} • ${hits.length}`,
+        hits.length ? hits.map((d) => makeDealCard(d, { allowBatch: false })).join("") : `<div class="eqd-empty">Nada encontrado.</div>`
+      );
     };
     document.getElementById("userSearchBtn").onclick = doUserSearch;
-    document.getElementById("userSearch").onkeydown = (e) => { if (e.key === "Enter") doUserSearch(); };
+    document.getElementById("userSearch").onkeydown = (e) => {
+      if (e.key === "Enter") doUserSearch();
+    };
 
-    // ✅ (5) reagendar em lote com calendário
     document.getElementById("batchResched").onclick = async () => {
       const ids = [...document.querySelectorAll(".eqd-batch:checked")].map((x) => x.getAttribute("data-id"));
       if (!ids.length) return alert("Selecione tarefas marcando 'Lote' nos cards.");
@@ -1935,14 +2031,16 @@
   }
 
   // =========================
-  // 22) MULTI SELEÇÃO (até 6) — mantido simples aqui
+  // 22) MULTI SELEÇÃO (até 6)
   // =========================
   let lastMultiSelection = [];
   function openMultiSelect() {
     const pin = askPin();
     if (!isAdmin(pin)) return;
 
-    openModal("Painel Multi Seleção", `
+    openModal(
+      "Painel Multi Seleção",
+      `
       <div style="font-size:12px;font-weight:950;display:flex;justify-content:space-between;align-items:center">
         <span>Selecione até 6 usuários</span>
         <button class="eqd-btn" data-action="modalClose">VOLTAR</button>
@@ -1960,7 +2058,8 @@
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
         <button class="eqd-btn eqd-btnPrimary" id="ms-ok">Abrir</button>
       </div>
-    `);
+    `
+    );
 
     document.getElementById("ms-ok").onclick = () => {
       const sel = [...document.querySelectorAll(".ms-u:checked")].map((x) => Number(x.value));
@@ -1975,6 +2074,9 @@
 
   function renderMultiColumns(userIds) {
     const cols = userIds.length;
+    const ds = dayStart(selectedDate).getTime();
+    const de = dayEnd(selectedDate).getTime();
+
     el.main.innerHTML = `
       <div class="panelHead">
         <div style="font-weight:950">PAINEL MULTI • Dia ${fmtDateOnly(selectedDate)}</div>
@@ -1988,12 +2090,20 @@
           .map((uid) => {
             const u = USERS.find((x) => Number(x.userId) === Number(uid)) || { name: `User ${uid}`, userId: uid };
             const photo = STATE.userPhotoById.get(Number(uid)) || "";
-            const ds = dayStart(selectedDate).getTime();
-            const deals = (STATE.dealsOpen || []).filter((d) => String(d.ASSIGNED_BY_ID || d._assigned || "") === String(uid) && d._prazo && new Date(d._prazo).getTime() >= ds || (d._prazo && new Date(d._prazo).getTime() < ds));
+
+            // ✅ filtro com parênteses corretos: assigned E (do dia OU atrasado)
+            const deals = (STATE.dealsOpen || []).filter((d) => {
+              if (String(d.ASSIGNED_BY_ID || d._assigned || "") !== String(uid)) return false;
+              if (!d._prazo) return false;
+              const t = new Date(d._prazo).getTime();
+              if (!Number.isFinite(t)) return false;
+              return (t >= ds && t <= de) || t < ds;
+            });
+
             const ordered = sortDeals(deals);
             return `
             <section class="panelCol">
-              <div class="panelColHead" style="opacity:1;height:auto;padding:10px 12px;display:flex;gap:10px;align-items:center;border-bottom:1px solid var(--border)">
+              <div class="panelColHead" style="padding:10px 12px;display:flex;gap:10px;align-items:center;border-bottom:1px solid var(--border)">
                 <img src="${photo || ""}" data-action="openUserFromMulti" data-userid="${uid}"
                      style="width:52px;height:52px;border-radius:999px;object-fit:cover;border:1px solid rgba(0,0,0,.12);cursor:pointer" referrerpolicy="no-referrer"
                      onerror="try{this.onerror=null;this.style.display='none'}catch(e){}" />
@@ -2009,16 +2119,148 @@
   }
 
   // =========================
-  // 23) DONE/EDIT/DELETE (mínimo)
+  // 23) EDIT MODAL (sem prompt) + TRANSFER MODAL
+  // =========================
+  function openEditDealModal(dealId) {
+    const deal = (STATE.dealsAll || []).find((d) => String(d.ID) === String(dealId));
+    if (!deal) return;
+
+    const currentTitle = String(deal.TITLE || "");
+    const currentObs = String(deal._obs || "");
+    const currentPrazo = deal._prazo ? new Date(deal._prazo) : null;
+
+    const valDateTime = currentPrazo
+      ? `${currentPrazo.getFullYear()}-${String(currentPrazo.getMonth() + 1).padStart(2, "0")}-${String(currentPrazo.getDate()).padStart(2, "0")}T${String(currentPrazo.getHours()).padStart(2, "0")}:${String(currentPrazo.getMinutes()).padStart(2, "0")}`
+      : "";
+
+    openModal(
+      `Editar • ID ${dealId}`,
+      `
+      <div class="eqd-warn" id="edWarn"></div>
+
+      <div style="display:grid;gap:10px">
+        <div>
+          <div style="font-size:11px;font-weight:950;opacity:.8;margin-bottom:6px">NOME DO NEGÓCIO</div>
+          <input id="edTitle" class="eqd-searchInput" style="width:100%" value="${escHtml(currentTitle)}" />
+        </div>
+
+        <div>
+          <div style="font-size:11px;font-weight:950;opacity:.8;margin-bottom:6px">PRAZO (dia e hora)</div>
+          <input id="edPrazo" type="datetime-local" class="eqd-searchInput" style="width:100%" value="${escHtml(valDateTime)}" />
+        </div>
+
+        <div>
+          <div style="font-size:11px;font-weight:950;opacity:.8;margin-bottom:6px">OBSERVAÇÕES</div>
+          <textarea id="edObs" class="leadObs" style="min-height:110px">${escHtml(currentObs)}</textarea>
+        </div>
+
+        <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end">
+          <button class="eqd-btn" id="edCancel">Cancelar</button>
+          <button class="eqd-btn eqd-btnPrimary" id="edSave">Salvar</button>
+        </div>
+      </div>
+    `
+    );
+
+    document.getElementById("edCancel").onclick = closeModal;
+
+    document.getElementById("edSave").onclick = async () => {
+      try {
+        setBusy("Salvando…");
+
+        const t = String(document.getElementById("edTitle").value || "").trim();
+        const pLocal = String(document.getElementById("edPrazo").value || "").trim();
+        const p = pLocal ? localInputToIsoWithOffset(pLocal) : "";
+        const o = String(document.getElementById("edObs").value || "").trim();
+
+        const fields = {};
+        if (t) fields.TITLE = t;
+        fields[UF_PRAZO] = p || "";
+        fields[UF_OBS] = o || "";
+
+        await bx("crm.deal.update", { id: String(dealId), fields });
+
+        closeModal();
+        await refreshData(false);
+        renderCurrentView();
+      } catch (err) {
+        const w = document.getElementById("edWarn");
+        if (w) {
+          w.style.display = "block";
+          w.textContent = "Erro ao salvar: " + (err.message || err);
+        } else alert("Erro ao salvar: " + (err.message || err));
+      } finally {
+        clearBusy();
+      }
+    };
+  }
+
+  function openTransferModal(dealId) {
+    const deal = (STATE.dealsAll || []).find((d) => String(d.ID) === String(dealId));
+    if (!deal) return;
+
+    const current = String(deal.ASSIGNED_BY_ID || deal._assigned || "");
+
+    openModal(
+      `Trocar colaboradora • ID ${dealId}`,
+      `
+      <div class="eqd-warn" id="trWarn"></div>
+
+      <div style="display:grid;gap:10px">
+        <div style="font-size:12px;font-weight:950;opacity:.85">Escolha o novo responsável:</div>
+
+        <select id="trUser" class="eqd-searchSelect" style="width:100%;background:rgba(255,255,255,.92);color:#111;border-color:rgba(0,0,0,.18)">
+          ${USERS.map((u) => `<option value="${u.userId}" ${String(u.userId) === current ? "selected" : ""}>${escHtml(u.name)} (${u.userId})</option>`).join("")}
+        </select>
+
+        <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end">
+          <button class="eqd-btn" id="trCancel">Cancelar</button>
+          <button class="eqd-btn eqd-btnPrimary" id="trSave">Transferir</button>
+        </div>
+      </div>
+    `
+    );
+
+    document.getElementById("trCancel").onclick = closeModal;
+
+    document.getElementById("trSave").onclick = async () => {
+      try {
+        setBusy("Transferindo…");
+        const uid = Number(document.getElementById("trUser").value);
+        if (!uid) throw new Error("Seleção inválida.");
+
+        await bx("crm.deal.update", { id: String(dealId), fields: { ASSIGNED_BY_ID: uid } });
+
+        closeModal();
+        await refreshData(true);
+        renderCurrentView();
+      } catch (err) {
+        const w = document.getElementById("trWarn");
+        if (w) {
+          w.style.display = "block";
+          w.textContent = "Erro: " + (err.message || err);
+        } else alert("Erro: " + (err.message || err));
+      } finally {
+        clearBusy();
+      }
+    };
+  }
+
+  // =========================
+  // 24) DONE: menu + conclude & reschedule
   // =========================
   function openDoneMenu(dealId) {
-    openModal("Concluir", `
-      <div class="eqd-empty">O que você quer fazer?</div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end">
+    openModal(
+      "Concluir",
+      `
+      <div style="font-size:12px;font-weight:950;opacity:.85">Escolha uma opção:</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end;margin-top:10px">
         <button class="eqd-btn" data-action="modalClose">Cancelar</button>
-        <button class="eqd-btn eqd-btnPrimary" data-action="doneOnly" data-id="${dealId}">Só concluir</button>
+        <button class="eqd-btn eqd-btnPrimary" data-action="doneOnly" data-id="${dealId}">Concluir</button>
+        <button class="eqd-btn eqd-btnDanger" data-action="doneResched" data-id="${dealId}">Concluir e reagendar</button>
       </div>
-    `);
+    `
+    );
   }
 
   async function doneOnly(dealId) {
@@ -2031,79 +2273,115 @@
     renderCurrentView();
   }
 
-  async function editPrazo(dealId) {
-    const prazoLocal = String(prompt("Novo prazo (ex.: 2026-02-21 14:30)") || "").trim();
-    const prazoIso = localInputToIsoWithOffset(prazoLocal);
-    if (!prazoIso) return alert("Prazo inválido.");
-    try {
-      setBusy("Salvando prazo…");
-      await bx("crm.deal.update", { id: String(dealId), fields: { [UF_PRAZO]: prazoIso } });
-      await refreshData(false);
-      clearBusy();
-      renderCurrentView();
-    } catch (e) {
-      clearBusy();
-      alert("Falha: " + (e.message || e));
-    }
-  }
+  async function openConcludeAndRescheduleCalendar(dealId) {
+    const deal = (STATE.dealsAll || []).find((d) => String(d.ID) === String(dealId));
+    if (!deal) return;
 
-  async function editTitle(dealId) {
-    const newTitle = String(prompt("Novo nome do negócio:") || "").trim();
-    if (!newTitle) return;
-    try {
-      setBusy("Salvando…");
-      await bx("crm.deal.update", { id: String(dealId), fields: { TITLE: newTitle } });
-      await refreshData(false);
-      clearBusy();
-      renderCurrentView();
-    } catch (e) {
-      clearBusy();
-      alert("Falha: " + (e.message || e));
-    }
-  }
+    const oldPrazo = deal._prazo ? new Date(deal._prazo) : new Date();
+    const hh = oldPrazo.getHours();
+    const mm = oldPrazo.getMinutes();
 
-  async function editObs(dealId) {
-    const old = (STATE.dealsAll || []).find((d) => String(d.ID) === String(dealId));
-    const cur = old ? String(old[UF_OBS] || "") : "";
-    const next = String(prompt("Observações (editar):", cur) || "").trim();
-    try {
-      setBusy("Salvando OBS…");
-      await bx("crm.deal.update", { id: String(dealId), fields: { [UF_OBS]: next } });
-      await refreshData(false);
-      clearBusy();
-      renderCurrentView();
-    } catch (e) {
-      clearBusy();
-      alert("Falha: " + (e.message || e));
-    }
-  }
+    calendarCursor = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
+    let tempSelected = new Date(selectedDate.getTime());
 
-  async function changeColab(dealId) {
-    const list = USERS.map((u) => `${u.userId} - ${u.name}`).join("\n");
-    const pick = String(prompt("Digite o ID do novo responsável:\n" + list) || "").trim();
-    if (!pick) return;
-    const uid = Number(pick);
-    if (!uid) return alert("ID inválido.");
-    try {
-      setBusy("Transferindo…");
-      await bx("crm.deal.update", { id: String(dealId), fields: { ASSIGNED_BY_ID: uid } });
-      await refreshData(true);
-      clearBusy();
-      renderCurrentView();
-    } catch (e) {
-      clearBusy();
-      alert("Falha: " + (e.message || e));
-    }
+    openModal(
+      `Concluir e reagendar • ID ${dealId}`,
+      `
+      <div style="font-size:12px;font-weight:950;opacity:.85">Duplo clique no dia (mantém o horário do card).</div>
+      <div id="calHost">${renderCalendarBody(tempSelected)}</div>
+    `
+    );
+
+    const host = document.getElementById("calHost");
+
+    host.addEventListener("click", (e) => {
+      const a = e.target.closest("[data-action]");
+      if (!a) return;
+      const act = a.getAttribute("data-action");
+      if (act === "calPrev") {
+        calendarCursor = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() - 1, 1);
+        host.innerHTML = renderCalendarBody(tempSelected);
+        return;
+      }
+      if (act === "calNext") {
+        calendarCursor = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() + 1, 1);
+        host.innerHTML = renderCalendarBody(tempSelected);
+        return;
+      }
+      if (act === "calToday") {
+        tempSelected = new Date();
+        calendarCursor = new Date(tempSelected.getFullYear(), tempSelected.getMonth(), 1);
+        host.innerHTML = renderCalendarBody(tempSelected);
+        return;
+      }
+      if (act === "calPick") {
+        const d = new Date(a.getAttribute("data-cal"));
+        if (!Number.isNaN(d.getTime())) {
+          tempSelected = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+          calendarCursor = new Date(d.getFullYear(), d.getMonth(), 1);
+          host.innerHTML = renderCalendarBody(tempSelected);
+        }
+      }
+    });
+
+    host.addEventListener("dblclick", async (e) => {
+      const a = e.target.closest('[data-action="calPick"]');
+      if (!a) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      const d = new Date(a.getAttribute("data-cal"));
+      if (Number.isNaN(d.getTime())) return;
+
+      const targetDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      const newIso = isoFromDateAndTimeParts(targetDay, hh, mm);
+
+      try {
+        if (!STATE.doneStageId) throw new Error("Não encontrei a coluna CONCLUÍDO na pipeline.");
+
+        setBusy("Concluindo e recriando…");
+
+        // 1) Concluir card atual
+        await bx("crm.deal.update", { id: String(dealId), fields: { STAGE_ID: String(STATE.doneStageId) } });
+
+        // 2) Criar novo card com os mesmos campos e novo prazo
+        const fieldsNew = {
+          CATEGORY_ID: Number(CATEGORY_MAIN),
+          STAGE_ID: String(deal.STAGE_ID),
+          TITLE: String(deal.TITLE || ""),
+          ASSIGNED_BY_ID: Number(deal.ASSIGNED_BY_ID || deal._assigned || 0),
+          [UF_TAREFA]: deal[UF_TAREFA] || "",
+          [UF_URGENCIA]: deal[UF_URGENCIA] || "",
+          [UF_ETAPA]: deal[UF_ETAPA] || "",
+          [UF_COLAB]: deal[UF_COLAB] || "",
+          [UF_OBS]: deal[UF_OBS] || "",
+          [UF_PRAZO]: newIso,
+        };
+
+        await bx("crm.deal.add", { fields: fieldsNew });
+
+        closeModal();
+        await refreshData(false);
+        renderCurrentView();
+      } catch (err) {
+        alert("Falha: " + (err.message || err));
+      } finally {
+        clearBusy();
+      }
+    });
   }
 
   async function deleteDeal(dealId) {
-    openModal("Confirmar exclusão", `
+    openModal(
+      "Confirmar exclusão",
+      `
       <div class="eqd-warn" style="display:block">Excluir este item?</div>
       <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
         <button class="eqd-btn" data-action="modalClose">Cancelar</button>
         <button class="eqd-btn eqd-btnDanger" id="confirmDel">Excluir</button>
       </div>
-    `);
+    `
+    );
     document.getElementById("confirmDel").onclick = async () => {
       try {
         setBusy("Excluindo…");
@@ -2121,7 +2399,7 @@
   }
 
   // =========================
-  // 24) CLICK HANDLER
+  // 25) CLICK HANDLER
   // =========================
   function globalClickHandler(e) {
     const a = e.target.closest("[data-action]");
@@ -2215,26 +2493,29 @@
       return;
     }
 
-    // ✅ (7) FOLLOW-UP do card do lead: modal (nome + prazo)
     if (act === "leadFollowupModal") {
       const user = USERS.find((u) => String(u.userId) === String(uid));
       const leads = STATE.leadsByUser.get(String(uid)) || [];
       const lead = leads.find((l) => String(l.ID) === String(leadId));
       if (!user || !lead) return;
-      const nm = leadTitle(lead);
-      // abre modal e cria follow-up usando campos automáticos
-      return openFollowUpModal(user, nm);
+      return openFollowUpModal(user, leadTitle(lead));
     }
 
+    if (act === "editDeal") return openEditDealModal(dealId);
+    if (act === "transfer") return openTransferModal(dealId);
+
     if (act === "doneMenu") return openDoneMenu(dealId);
+
     if (act === "doneOnly") {
       closeModal();
       return doneOnly(dealId).catch((err) => alert(err.message || err));
     }
-    if (act === "editPrazo") return editPrazo(dealId);
-    if (act === "editTitle") return editTitle(dealId);
-    if (act === "changeColab") return changeColab(dealId);
-    if (act === "editObs") return editObs(dealId);
+
+    if (act === "doneResched") {
+      closeModal();
+      return openConcludeAndRescheduleCalendar(dealId);
+    }
+
     if (act === "delete") return deleteDeal(dealId);
   }
 
@@ -2242,7 +2523,7 @@
   el.modalBody.addEventListener("click", globalClickHandler);
 
   // =========================
-  // 25) TOP BUTTONS
+  // 26) TOP BUTTONS
   // =========================
   el.refresh.addEventListener("click", () => {
     refreshData(true).then(renderCurrentView).catch(() => {});
@@ -2255,7 +2536,7 @@
   el.multi.addEventListener("click", openMultiSelect);
 
   // =========================
-  // 26) RENDER
+  // 27) RENDER
   // =========================
   function renderCurrentView() {
     el.meta.textContent = STATE.lastOkAt ? `Atualizado em ${fmt(STATE.lastOkAt)}${STATE.offline ? " • (offline)" : ""}` : `Carregando…`;
@@ -2267,7 +2548,7 @@
   }
 
   // =========================
-  // 27) REFRESH (cache-first + background)
+  // 28) REFRESH (cache-first + background)
   // =========================
   let REFRESH_RUNNING = false;
 
@@ -2292,24 +2573,20 @@
   }
 
   // =========================
-  // 28) INIT (✅ performance: render imediato do cache)
+  // 29) INIT (render imediato do cache)
   // =========================
   (async () => {
-    // 1) bootstrap rápido: stages (1x) + cache render
     try {
       await loadStagesForCategory(CATEGORY_MAIN).catch(() => {});
       STATE.bootstrapLoaded = true;
       loadCache();
     } catch (_) {}
 
-    // 2) render imediato (cache)
     currentView = { kind: "general", userId: null, multi: null };
     renderCurrentView();
 
-    // 3) refresh em background (sem travar UI)
     refreshData(true).then(() => renderCurrentView()).catch(() => {});
 
-    // 4) timer refresh leve
     setInterval(() => {
       if (!REFRESH_RUNNING && BX_INFLIGHT === 0) {
         refreshData(false).then(() => renderCurrentView()).catch(() => {});
