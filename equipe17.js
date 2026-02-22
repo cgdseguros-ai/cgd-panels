@@ -1,18 +1,8 @@
-/* eqd.js — GET • CGD CORRETORA (ATUALIZAÇÃO v4.1 correções + layout especial + batch reschedule avançado)
-   Correções desta versão:
-   1) Rodapé: frase "System created by GRUPO CGD" centralizada (itálico, 1 linha)
-   2) Calendário superior: duplo clique agora abre o dia corretamente (robusto)
-   3) Reagendar em lote: novo modal com lista de cards + dia único + horário por card (ou manter original)
-   4) Painel individual:
-      - Layout especial SOMENTE para userIds da lista (vendas/leads): 3 colunas (Negócios, Follow-up do dia, Leads ATENDIDOS do dia)
-      - Demais users: 3 colunas normais, sem categorização
-   5) Card do negócio:
-      - Botões separados: EDITAR PRAZO / EDITAR NEGÓCIO (mantido)
-      - CONCLUIR: menu com "Só concluir" e "Concluir e reagendar" (reagendar pede data+hora por escrito em modal)
-      - Editar urgência voltou (modal com lista)
-   6) Modal LEADS:
-      - Busca: texto digitado preto
-      - OBS: não aparece no card; vira botão OBS (cinza vazio / laranja quando tem conteúdo) -> abre modal para editar/salvar
+/* eqd.js — GET • CGD CORRETORA (ATUALIZAÇÃO v4.1 + correções solicitadas)
+   Correções aplicadas AGORA:
+   1) EDITAR PRAZO: salvava só no 2º clique → corrigido com lock + atualização local imediata (sem depender do refresh/interval)
+   2) URGÊNCIA no card: agora é CLICÁVEL (clicar na tag de urgência abre o modal de urgência)
+   3) Modo escuro: fundo CINZA ESCURO (mais “grafite”), mantendo os cards claros como já estavam
 */
 
 (function () {
@@ -185,13 +175,18 @@
     .eqd-searchSelect{border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.10);border-radius:999px;padding:8px 10px;font-size:12px;font-weight:950;outline:none;min-width:170px;color:#fff;}
     .eqd-searchSelect option{color:#111;background:#fff;}
 
-    /* ✅ Modo escuro mais suave/cinzento */
+    /* ✅ Modo escuro: fundo cinza escuro (grafite) */
     #eqd-app.eqd-dark{
-      --bgA:#121418; --bgB:#0f1115; --bgC:#121418;
+      --bgA:#16181c;
+      --bgB:#1c2026;
+      --bgC:#15171b;
       --border: rgba(255,255,255,.10);
       --text: #fff;
       --muted: rgba(255,255,255,.78);
-      background: linear-gradient(135deg, #0f1115, #121418);
+      background:
+        radial-gradient(900px 600px at 15% 20%, rgba(90,95,110,.18), transparent 60%),
+        radial-gradient(900px 600px at 85% 20%, rgba(80,85,100,.16), transparent 60%),
+        linear-gradient(135deg, #14161a, #1b1f26);
     }
 
     /* PAINEL GERAL */
@@ -307,6 +302,10 @@
     @keyframes eqdBlinkUrg{0%,100%{opacity:1}50%{opacity:.35}}
     .eqd-tagObs{border-color:rgba(255,180,0,.55);background:rgba(255,200,0,.22);font-weight:950;color:rgba(120,70,0,.95);animation:eqdBlinkObs .95s ease-in-out infinite;cursor:pointer;}
     @keyframes eqdBlinkObs{0%,100%{opacity:1}50%{opacity:.35}}
+
+    /* tag clicável (urgência) */
+    .eqd-tagClickable{cursor:pointer;user-select:none;}
+    .eqd-tagClickable:hover{filter:saturate(1.15);}
 
     .eqd-foot{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:2px;font-size:10.5px;color:rgba(18,26,40,.66);}
     .eqd-cardActions{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;}
@@ -994,6 +993,53 @@
   }
 
   // =========================
+  // 9.1) PATCH LOCAL (corrige “2 cliques”)
+  // =========================
+  function findDealLocal(dealId) {
+    const id = String(dealId);
+    return (STATE.dealsAll || []).find((d) => String(d.ID) === id) || null;
+  }
+
+  async function patchDealLocalAfterUpdate(dealId, fields) {
+    const d = findDealLocal(dealId);
+    if (!d) return;
+
+    // atualiza “raw”
+    Object.keys(fields || {}).forEach((k) => { d[k] = fields[k]; });
+
+    // atualiza “views” (_prazo, _late, _obs, _urgTxt etc.)
+    if (Object.prototype.hasOwnProperty.call(fields, UF_PRAZO)) {
+      const prazoRaw = fields[UF_PRAZO];
+      const dt = prazoRaw ? new Date(prazoRaw) : null;
+      const ok = dt && !Number.isNaN(dt.getTime());
+      d._prazo = ok ? dt.toISOString() : "";
+      d._late = ok ? dt.getTime() < Date.now() : false;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(fields, UF_OBS)) {
+      d._obs = String(fields[UF_OBS] || "").trim();
+      d._hasObs = !!d._obs;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(fields, "TITLE")) {
+      d.TITLE = String(fields.TITLE || "");
+      d._accent = dealAccent(d);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(fields, UF_URGENCIA)) {
+      const urgMap = await enums(UF_URGENCIA).catch(() => ({}));
+      const urgId = String(fields[UF_URGENCIA] || "").trim();
+      d._urgId = urgId;
+      d._urgTxt = urgId ? String((urgMap || {})[urgId] || "").trim() : "";
+    }
+
+    // mantém dealsOpen coerente (se for concluído)
+    STATE.dealsOpen = (STATE.dealsAll || []).filter((x) => !(STATE.doneStageId && String(x.STAGE_ID) === String(STATE.doneStageId)));
+
+    saveCache();
+  }
+
+  // =========================
   // 10) UI BASE
   // =========================
   const root = ensureRoot();
@@ -1316,14 +1362,10 @@
         const isDouble = (key === lastKey) && (now - lastAt <= 360);
         lastKey = key; lastAt = now;
 
-        if (isDouble) {
-          // aplica e fecha (abrir dia)
-          onApply(d);
-        }
+        if (isDouble) onApply(d);
       }
     });
 
-    // fallback dblclick nativo (se o navegador entregar)
     host.addEventListener("dblclick", (e) => {
       const a = e.target.closest('[data-action="calPick"]');
       if (!a) return;
@@ -1355,13 +1397,20 @@
     const prazoTxt = deal._prazo ? fmt(deal._prazo) : "Sem prazo";
     const tags = [];
 
-    if (isUrgenteText(deal._urgTxt)) tags.push(`<span class="eqd-tag eqd-tagUrg">URGENTE</span>`);
+    // ✅ Urgência clicável (no próprio card)
+    if (isUrgenteText(deal._urgTxt)) {
+      tags.push(`<span class="eqd-tag eqd-tagUrg eqd-tagClickable" data-action="editUrg" data-id="${deal.ID}" title="Clique para alterar a urgência">URGENTE</span>`);
+    }
     if (deal._late) tags.push(`<span class="eqd-tag eqd-tagLate">ATRASADA</span>`);
     if (deal._hasObs) tags.push(`<span class="eqd-tag eqd-tagObs" data-action="editObs" data-id="${deal.ID}">OBS</span>`);
     if (deal._tarefaTxt) tags.push(`<span class="eqd-tag">Tipo: ${trunc(deal._tarefaTxt, 26)}</span>`);
     if (deal._colabTxt) tags.push(`<span class="eqd-tag">COLAB: ${trunc(deal._colabTxt, 28)}</span>`);
     if (deal._etapaTxt) tags.push(`<span class="eqd-tag">ETAPA: ${trunc(deal._etapaTxt, 18)}</span>`);
-    if (deal._urgTxt) tags.push(`<span class="eqd-tag">${trunc(deal._urgTxt, 22)}</span>`);
+
+    // ✅ tag com texto da urgência também clicável
+    if (deal._urgTxt) {
+      tags.push(`<span class="eqd-tag eqd-tagClickable" data-action="editUrg" data-id="${deal.ID}" title="Clique para alterar a urgência">${trunc(deal._urgTxt, 22)}</span>`);
+    }
 
     const batchBox =
       context && context.allowBatch
@@ -1496,7 +1545,6 @@
     const all = (STATE.dealsAll || []).filter((d) => String(d.ASSIGNED_BY_ID || d._assigned || "") === String(user.userId));
     const listAll = all.filter(isFollowupDeal);
 
-    // ✅ não mostrar antigos: só os com prazo nos últimos 10 dias pra frente
     const from = new Date(Date.now() - 1000*60*60*24*10).getTime();
     const list = listAll.filter((d) => {
       if (!d._prazo) return false;
@@ -1825,7 +1873,6 @@
     const when = leadDataHora(l) ? fmt(leadDataHora(l)) : "—";
     const stageName = leadStageNameById(l.STATUS_ID) || "";
 
-    // ✅ sem ID do lead (como você pediu)
     return `
       <div class="leadCard">
         <div class="leadTitle">${escHtml(leadTitle(l))}</div>
@@ -1856,11 +1903,9 @@
 
     const followListBtn = `<button class="eqd-btn" data-action="followList" data-userid="${user.userId}">LISTA DE FOLLOW-UP</button>`;
 
-    // ✅ Layout especial SOMENTE para SPECIAL_PANEL_USERS
     const isSpecial = SPECIAL_PANEL_USERS.has(String(user.userId));
 
     if (!isSpecial) {
-      // ===== Painel normal (3 colunas simples)
       const dealsDay = dealsOfSelectedDayPlusOverdueForUser(user.userId);
       const ordered = sortDeals(dealsDay);
       const cols = distributeInto3Cols(ordered);
@@ -1902,7 +1947,6 @@
         </div>
       `;
 
-      // alerta LEADS
       if (hasLeadsBtn) {
         const btn = document.getElementById("btnLeads");
         if (btn) {
@@ -1929,13 +1973,10 @@
       return;
     }
 
-    // ===== Painel especial (Negócios | Follow-up do dia | Leads atendidos do dia)
     const { tasks, follow } = dealsForSpecialPanel(user.userId);
     const orderedTasks = sortDeals(tasks);
     const orderedFollow = sortDeals(follow);
 
-    // garante leads no cache (para o painel especial aparecer certo)
-    // lazy: só carrega se ainda não carregou
     if (!STATE.leadsByUser.has(String(user.userId))) {
       loadLeadsForOneUser(user.userId).then(() => { renderUserPanel(user.userId); }).catch(() => {});
     }
@@ -1991,7 +2032,6 @@
       </div>
     `;
 
-    // alerta LEADS
     if (hasLeadsBtn) {
       const btn = document.getElementById("btnLeads");
       if (btn) {
@@ -2097,7 +2137,6 @@
   // 23) DONE / EDIT / DELETE / URG
   // =========================
   function openDoneMenu(dealId) {
-    const deal = (STATE.dealsAll || []).find((d) => String(d.ID) === String(dealId));
     const now = new Date();
     now.setMinutes(now.getMinutes() + 60);
     const localDefault = new Date(now.getTime() - now.getTimezoneOffset()*60000).toISOString().slice(0,16);
@@ -2151,7 +2190,6 @@
   }
 
   async function editPrazo(dealId) {
-    // ✅ modal ao invés de prompt
     const deal = (STATE.dealsAll || []).find((d) => String(d.ID) === String(dealId));
     const cur = deal && deal._prazo ? new Date(deal._prazo) : new Date();
     const localDefault = new Date(cur.getTime() - cur.getTimezoneOffset()*60000).toISOString().slice(0,16);
@@ -2220,7 +2258,6 @@
   }
 
   async function changeColab(dealId) {
-    // mantém prompt aqui por ser operacional simples (se quiser, converto para modal depois)
     const list = USERS.map((u) => `${u.userId} - ${u.name}`).join("\n");
     const pick = String(prompt("Digite o ID do novo responsável:\n" + list) || "").trim();
     if (!pick) return;
@@ -2272,7 +2309,6 @@
 
     if (!deals.length) return alert("Nenhum card encontrado.");
 
-    // dia padrão: dia selecionado
     const baseDay = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), 0,0,0,0);
     const dateDefault = `${baseDay.getFullYear()}-${String(baseDay.getMonth()+1).padStart(2,"0")}-${String(baseDay.getDate()).padStart(2,"0")}`;
 
@@ -2362,7 +2398,6 @@
         setBusy("Reagendando…");
 
         for (const d of deals) {
-          // horário: original ou input
           let hh = 9, mm = 0;
           if (keep) {
             const old = d._prazo ? new Date(d._prazo) : null;
@@ -2377,14 +2412,11 @@
           const newIso = isoFromDateAndTimeParts(targetDay, hh, mm);
           await bx("crm.deal.update", { id: String(d.ID), fields: { [UF_PRAZO]: newIso } });
 
-          // atualiza cache local
-          d[UF_PRAZO] = newIso;
-          d._prazo = new Date(newIso).toISOString();
-          d._late = false;
+          await patchDealLocalAfterUpdate(d.ID, { [UF_PRAZO]: newIso });
         }
 
         closeModal();
-        await refreshData(false);
+        clearBusy();
         renderCurrentView();
       } catch (e) {
         clearBusy();
@@ -2400,6 +2432,23 @@
   // =========================
   // 25) CLICK HANDLER (global)
   // =========================
+  function lockButtonOnce(btn, busyLabel) {
+    if (!btn) return { ok: true, unlock: () => {} };
+    if (btn.dataset && btn.dataset.busy === "1") return { ok: false, unlock: () => {} };
+    const oldText = btn.textContent;
+    btn.dataset.busy = "1";
+    try { btn.disabled = true; } catch (_) {}
+    if (busyLabel) btn.textContent = busyLabel;
+    return {
+      ok: true,
+      unlock: () => {
+        try { btn.disabled = false; } catch (_) {}
+        if (btn.dataset) btn.dataset.busy = "0";
+        if (oldText != null) btn.textContent = oldText;
+      }
+    };
+  }
+
   function globalClickHandler(e) {
     const a = e.target.closest("[data-action]");
     if (!a) return;
@@ -2463,9 +2512,7 @@
       return;
     }
 
-    if (act === "leadObsModal") {
-      return openLeadObsModal(uid, leadId);
-    }
+    if (act === "leadObsModal") return openLeadObsModal(uid, leadId);
 
     if (act === "leadFollowupModal") {
       const user = USERS.find((u) => String(u.userId) === String(uid));
@@ -2499,47 +2546,67 @@
     if (act === "changeColab") return changeColab(dealId);
     if (act === "delete") return deleteDeal(dealId);
 
-    // salvar prazo / título / urg / obs (do modal)
+    // =========================
+    // ✅ SALVAR (corrigido: 1 clique, lock, patch local imediato)
+    // =========================
     if (act === "epSave") {
+      const lock = lockButtonOnce(a, "Salvando…");
+      if (!lock.ok) return;
+
       const v = document.getElementById("epDt") ? String(document.getElementById("epDt").value || "").trim() : "";
       const iso = localInputToIsoWithOffset(v);
-      if (!iso) return alert("Prazo inválido.");
+      if (!iso) { lock.unlock(); return alert("Prazo inválido."); }
+
       setBusy("Salvando prazo…");
       bx("crm.deal.update", { id: String(dealId), fields: { [UF_PRAZO]: iso } })
-        .then(() => refreshData(false))
+        .then(() => patchDealLocalAfterUpdate(dealId, { [UF_PRAZO]: iso }))
         .then(() => { clearBusy(); closeModal(); renderCurrentView(); })
-        .catch((e) => { clearBusy(); alert("Falha: " + (e.message || e)); });
+        .catch((e) => { clearBusy(); alert("Falha: " + (e.message || e)); })
+        .finally(() => lock.unlock());
       return;
     }
 
     if (act === "etSave") {
+      const lock = lockButtonOnce(a, "Salvando…");
+      if (!lock.ok) return;
+
       const v = document.getElementById("etText") ? String(document.getElementById("etText").value || "").trim() : "";
-      if (!v) return alert("Nome vazio.");
+      if (!v) { lock.unlock(); return alert("Nome vazio."); }
+
       setBusy("Salvando…");
       bx("crm.deal.update", { id: String(dealId), fields: { TITLE: v } })
-        .then(() => refreshData(false))
+        .then(() => patchDealLocalAfterUpdate(dealId, { TITLE: v }))
         .then(() => { clearBusy(); closeModal(); renderCurrentView(); })
-        .catch((e) => { clearBusy(); alert("Falha: " + (e.message || e)); });
+        .catch((e) => { clearBusy(); alert("Falha: " + (e.message || e)); })
+        .finally(() => lock.unlock());
       return;
     }
 
     if (act === "euSave") {
+      const lock = lockButtonOnce(a, "Salvando…");
+      if (!lock.ok) return;
+
       const v = document.getElementById("euSel") ? String(document.getElementById("euSel").value || "").trim() : "";
       setBusy("Salvando urgência…");
       bx("crm.deal.update", { id: String(dealId), fields: { [UF_URGENCIA]: v } })
-        .then(() => refreshData(false))
+        .then(() => patchDealLocalAfterUpdate(dealId, { [UF_URGENCIA]: v }))
         .then(() => { clearBusy(); closeModal(); renderCurrentView(); })
-        .catch((e) => { clearBusy(); alert("Falha: " + (e.message || e)); });
+        .catch((e) => { clearBusy(); alert("Falha: " + (e.message || e)); })
+        .finally(() => lock.unlock());
       return;
     }
 
     if (act === "eoSave") {
+      const lock = lockButtonOnce(a, "Salvando…");
+      if (!lock.ok) return;
+
       const v = document.getElementById("eoText") ? String(document.getElementById("eoText").value || "").trim() : "";
       setBusy("Salvando OBS…");
       bx("crm.deal.update", { id: String(dealId), fields: { [UF_OBS]: v } })
-        .then(() => refreshData(false))
+        .then(() => patchDealLocalAfterUpdate(dealId, { [UF_OBS]: v }))
         .then(() => { clearBusy(); closeModal(); renderCurrentView(); })
-        .catch((e) => { clearBusy(); alert("Falha: " + (e.message || e)); });
+        .catch((e) => { clearBusy(); alert("Falha: " + (e.message || e)); })
+        .finally(() => lock.unlock());
       return;
     }
   }
