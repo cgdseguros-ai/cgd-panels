@@ -1,11 +1,6 @@
-/* eqd.js — GET • CGD CORRETORA (ATUALIZAÇÃO v4.2)
-   Correções desta versão (além do que já existe no v4.1):
-   1) EDITAR PRAZO: não precisa mais clicar 2x (lock + botão desabilita + update otimista)
-   2) Urgência clicável dentro do card (clique no chip de urgência abre o modal de urgência)
-   3) Modo escuro: fundo cinza escuro no painel principal (e ajustes de contraste no grid de usuários)
-   4) Painel individual > LEADS:
-      a) ao editar/mover/criar follow-up/editar OBS de lead -> volta para o modal LEADS (não para o painel)
-      b) contagem de cards por coluna + botão para criar lead manualmente (com todos os dados)
+/* equipe17.js — GET • CGD CORRETORA (ATUALIZAÇÃO v4.2 + TRANSFERIR LEAD)
+   ✅ Adição desta versão:
+   - Painel individual > LEADS > card do lead: botão TRANSFERIR (abre modal e muda ASSIGNED_BY_ID do lead)
 */
 
 (function () {
@@ -1628,6 +1623,80 @@
     };
   }
 
+  // ✅ NOVO: Modal de TRANSFERIR LEAD
+  function openLeadTransferModal(fromUserId, leadId){
+    const fromId = String(fromUserId || "");
+    const lid = String(leadId || "");
+    if(!fromId || !lid) return;
+
+    const eligible = USERS
+      .filter(u => LEAD_USERS.has(String(u.userId)))
+      .filter(u => String(u.userId) !== fromId);
+
+    if(!eligible.length) return alert("Nenhuma usuária disponível para transferência.");
+
+    const fromUser = USERS.find(u => String(u.userId) === fromId);
+
+    openModal(`TRANSFERIR LEAD`, `
+      <div class="eqd-warn" id="ltWarn"></div>
+
+      <div style="font-size:12px;font-weight:950;opacity:.85;margin-bottom:10px">
+        Origem: <strong>${escHtml(fromUser ? fromUser.name : ("USER "+fromId))}</strong>
+        • Lead ID: <strong>${escHtml(lid)}</strong>
+      </div>
+
+      <div style="font-size:11px;font-weight:900;margin-bottom:6px">Transferir para</div>
+      <select id="ltToUser" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
+        ${eligible.map(u => `<option value="${escHtml(String(u.userId))}">${escHtml(u.name)} (ID ${escHtml(String(u.userId))})</option>`).join("")}
+      </select>
+
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap">
+        <button class="eqd-btn" data-action="modalClose">Cancelar</button>
+        <button class="eqd-btn eqd-btnPrimary" id="ltConfirm">Transferir</button>
+      </div>
+    `);
+
+    const btn = document.getElementById("ltConfirm");
+    const warn = document.getElementById("ltWarn");
+
+    btn.onclick = async () => {
+      const toId = String((document.getElementById("ltToUser")||{}).value || "").trim();
+      if(!toId) return;
+
+      const lk = `leadTransfer:${fromId}:${lid}:${toId}`;
+      if(!lockTry(lk)) return;
+
+      try{
+        btn.disabled = true;
+        warn.style.display = "none";
+        warn.textContent = "";
+
+        setBusy("Transferindo lead…");
+
+        await bx("crm.lead.update", { id: String(lid), fields: { ASSIGNED_BY_ID: Number(toId) } });
+
+        await Promise.allSettled([
+          loadLeadsForOneUser(fromId),
+          loadLeadsForOneUser(toId),
+        ]);
+
+        clearBusy();
+        closeModal();
+
+        // ✅ volta pro modal LEADS (mantendo busca)
+        reopenLeadsModalSafe();
+
+      } catch(e){
+        clearBusy();
+        warn.style.display = "block";
+        warn.textContent = "Falha:\n" + (e.message || e);
+      } finally {
+        btn.disabled = false;
+        lockRelease(lk);
+      }
+    };
+  }
+
   async function openManualLeadCreateModal(user, defaultStatusId) {
     const now = new Date();
     const localNow = new Date(now.getTime() - now.getTimezoneOffset()*60000).toISOString().slice(0,16);
@@ -1853,14 +1922,20 @@
         `<button class="leadBtn ${toStatus === sPerdido ? "leadBtnD" : toStatus ? "leadBtnP" : ""}" data-action="${action}" data-leadid="${l.ID}" data-tostatus="${toStatus || ""}" data-userid="${user.userId}">${label}</button>`;
 
       let btns = "";
+
+      // ✅ TRANSFERIR (sempre disponível no card)
+      const transferBtn = `<button class="leadBtn" data-action="leadTransferOpen" data-leadid="${l.ID}" data-userid="${user.userId}">TRANSFERIR</button>`;
+
       if (column === "AT") {
-        btns = `${mkBtn("ATENDIDO","leadMove",sAtendido)}${mkBtn("PERDIDO","leadMove",sPerdido)}`;
+        btns = `${mkBtn("ATENDIDO","leadMove",sAtendido)}${mkBtn("PERDIDO","leadMove",sPerdido)}${transferBtn}`;
       } else if (column === "OK") {
         btns = `${mkBtn("PERDIDO","leadMove",sPerdido)}${mkBtn("CONVERTIDO","leadMove",sConv)}
-                <button class="leadBtn" data-action="leadFollowupModal" data-leadid="${l.ID}" data-userid="${user.userId}">FOLLOW-UP</button>`;
+                <button class="leadBtn" data-action="leadFollowupModal" data-leadid="${l.ID}" data-userid="${user.userId}">FOLLOW-UP</button>
+                ${transferBtn}`;
       } else if (column === "Q") {
         btns = `${mkBtn("PERDIDO","leadMove",sPerdido)}${mkBtn("CONVERTIDO","leadMove",sConv)}
-                <button class="leadBtn" data-action="leadFollowupModal" data-leadid="${l.ID}" data-userid="${user.userId}">FOLLOW-UP</button>`;
+                <button class="leadBtn" data-action="leadFollowupModal" data-leadid="${l.ID}" data-userid="${user.userId}">FOLLOW-UP</button>
+                ${transferBtn}`;
       }
 
       return `
@@ -2651,6 +2726,12 @@
       const user = USERS.find((u) => String(u.userId) === String(uid));
       if (!user) return;
       return openManualLeadCreateModal(user, defStatus || "");
+    }
+
+    // ✅ NOVO: abrir modal de transferência
+    if (act === "leadTransferOpen") {
+      if (!leadId || !uid) return;
+      return openLeadTransferModal(uid, leadId);
     }
 
     if (act === "leadMove") {
