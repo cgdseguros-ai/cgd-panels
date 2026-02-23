@@ -1843,277 +1843,263 @@
 function openNewTaskModalForUser(user, opts) {
   const dt0 = new Date();
   dt0.setMinutes(dt0.getMinutes() + 60);
-  const localDefault = new Date(dt0.getTime() - dt0.getTimezoneOffset() * 60000)
-    .toISOString()
-    .slice(0, 16);
+  const localDefault = new Date(dt0.getTime() - dt0.getTimezoneOffset()*60000).toISOString().slice(0, 16);
 
-  // ---------- fontes de opções (sem quebrar se não existir) ----------
-  // Usuários para COLAB (mas COLAB é campo TEXTO no seu caso)
-  const allUsers =
-    (opts && Array.isArray(opts.users) && opts.users.length ? opts.users : null) ||
-    (Array.isArray(STATE && STATE.users) ? STATE.users : null) ||
-    (Array.isArray(STATE && STATE.usersList) ? STATE.usersList : null) ||
-    [];
-
-  // Etapas (UF de lista). Tenta usar cache pronto (se existir); senão, puxa via CRM status.
-  async function getEtapaOptions() {
-    // cache em memória
-    if (STATE && Array.isArray(STATE._etapaOpts) && STATE._etapaOpts.length) return STATE._etapaOpts;
-
-    // 1) se o painel já tiver um map de estágios
-    try {
-      if (STATE && STATE.stageMap && typeof STATE.stageMap === "object") {
-        const arr = Object.keys(STATE.stageMap).map((k) => ({
-          id: String(k),
-          name: String(STATE.stageMap[k] || k),
-        }));
-        if (arr.length) {
-          STATE._etapaOpts = arr;
-          return arr;
-        }
-      }
-    } catch (_) {}
-
-    // 2) tentativa padrão: crm.status.list para o ENTITY_ID do UF (listas do CRM usam STATUS)
-    // ⚠️ Aqui o UF_ETAPA é um campo "lista": UF_CRM_1768179977089
-    // Em Bitrix, o ENTITY_ID do status normalmente é algo como "CRM_STATUS_*" (depende da lista).
-    // Então a forma estável é: descobrir o entityId por "crm.deal.userfield.get" e então listar status.
-    try {
-      if (typeof bx === "function") {
-        const uf = await bx("crm.deal.userfield.get", { id: "UF_CRM_1768179977089" }).catch(() => null);
-        const entityId = uf && (uf.LIST && uf.LIST.ENTITY_ID) ? uf.LIST.ENTITY_ID : (uf && uf.ENTITY_ID ? uf.ENTITY_ID : null);
-
-        // Alguns retornos trazem LIST.ENTITY_ID; outros exigem UF_SETTINGS
-        const entityId2 =
-          entityId ||
-          (uf && uf.SETTINGS && uf.SETTINGS.ENTITY_ID ? uf.SETTINGS.ENTITY_ID : null) ||
-          (uf && uf.USER_TYPE_ID === "enumeration" && uf.FIELD_NAME ? uf.FIELD_NAME : null);
-
-        if (entityId2) {
-          const sts = await bx("crm.status.list", { filter: { ENTITY_ID: entityId2 } }).catch(() => null);
-          const items = (sts && (sts.result || sts)) || [];
-          const arr = (Array.isArray(items) ? items : []).map((s) => ({
-            id: String(s.STATUS_ID || s.ID || ""),
-            name: String(s.NAME || s.NAME_INIT || s.STATUS_ID || s.ID || ""),
-          })).filter((x) => x.id && x.name);
-          if (arr.length) {
-            if (STATE) STATE._etapaOpts = arr;
-            return arr;
-          }
-        }
-      }
-    } catch (_) {}
-
-    return []; // sem quebrar UI
+  // ---------- helpers ----------
+  function setSelectLoading(sel, label){
+    if (!sel) return;
+    sel.innerHTML = `<option value="">${label || "Carregando…"}</option>`;
+    sel.disabled = true;
+  }
+  function setSelectOptions(sel, options, placeholder){
+    if (!sel) return;
+    const ph = placeholder || "Selecione…";
+    const safe = Array.isArray(options) ? options : [];
+    sel.innerHTML =
+      `<option value="">${escHtml(ph)}</option>` +
+      safe.map(o => `<option value="${escHtml(String(o.id))}">${escHtml(String(o.name))}</option>`).join("");
+    sel.disabled = false;
+  }
+  function setSelectFallback(sel, msg){
+    if (!sel) return;
+    sel.innerHTML = `<option value="">${escHtml(msg || "(não carregou)")}</option>`;
+    sel.disabled = false;
   }
 
-  // Tipos de tarefa (lista UF_CRM_1768185018696)
-  async function getTipoTarefaOptions() {
-    if (STATE && Array.isArray(STATE._tipoTarefaOpts) && STATE._tipoTarefaOpts.length) return STATE._tipoTarefaOpts;
-    try {
-      const uf = await bx("crm.deal.userfield.get", { id: "UF_CRM_1768185018696" }).catch(() => null);
-      const entityId = uf && (uf.LIST && uf.LIST.ENTITY_ID) ? uf.LIST.ENTITY_ID : (uf && uf.SETTINGS && uf.SETTINGS.ENTITY_ID ? uf.SETTINGS.ENTITY_ID : null);
-      if (entityId) {
-        const sts = await bx("crm.status.list", { filter: { ENTITY_ID: entityId } }).catch(() => null);
-        const items = (sts && (sts.result || sts)) || [];
-        const arr = (Array.isArray(items) ? items : []).map((s) => ({
-          id: String(s.STATUS_ID || s.ID || ""),
-          name: String(s.NAME || s.NAME_INIT || s.STATUS_ID || s.ID || ""),
-        })).filter((x) => x.id && x.name);
-        if (arr.length) {
-          if (STATE) STATE._tipoTarefaOpts = arr;
-          return arr;
+  // --------- pegar opções de UF (enum/lista) do Bitrix, do jeito mais compatível possível ----------
+  async function getEnumOptionsByFieldName(fieldName){
+    const fn = String(fieldName || "").trim();
+    if (!fn) return [];
+
+    // cache em memória por UF
+    STATE._ufEnumCache = STATE._ufEnumCache || {};
+    if (Array.isArray(STATE._ufEnumCache[fn]) && STATE._ufEnumCache[fn].length) return STATE._ufEnumCache[fn];
+
+    // 1) tentar via userfield.list (melhor porque acha pelo FIELD_NAME)
+    let uf = null;
+    try{
+      const r = await bx("crm.deal.userfield.list", { filter: { FIELD_NAME: fn } }).catch(()=>null);
+      const arr = (r && (r.result || r)) || [];
+      if (Array.isArray(arr) && arr.length) uf = arr[0];
+    }catch(_){}
+
+    // 2) fallback via userfield.get (algumas contas aceitam passando o UF como "id")
+    if (!uf){
+      try{
+        const r2 = await bx("crm.deal.userfield.get", { id: fn }).catch(()=>null);
+        if (r2 && (r2.FIELD_NAME || r2.fieldName)) uf = r2;
+      }catch(_){}
+    }
+
+    // 3) opções já vêm no próprio userfield (muito comum)
+    // formatos vistos: uf.LIST = [{ID, VALUE}] ou [{ID, NAME}] ou uf.ENUM = [...]
+    try{
+      const listA = uf && uf.LIST;
+      const listB = uf && uf.ENUM;
+      const listC = uf && uf.items; // alguns retornos
+      const raw =
+        (Array.isArray(listA) ? listA :
+        (Array.isArray(listB) ? listB :
+        (Array.isArray(listC) ? listC : null)));
+
+      if (raw && raw.length){
+        const opts = raw.map(x => ({
+          id: String(x.ID ?? x.id ?? x.VALUE_ID ?? x.valueId ?? x.XML_ID ?? x.xmlId ?? x.CODE ?? x.code ?? ""),
+          name: String(x.VALUE ?? x.value ?? x.NAME ?? x.name ?? x.TITLE ?? x.title ?? x.ID ?? "")
+        })).filter(o => o.id && o.name);
+
+        if (opts.length){
+          STATE._ufEnumCache[fn] = opts;
+          return opts;
         }
       }
-    } catch (_) {}
+    }catch(_){}
+
+    // 4) se não veio lista, tenta achar ENTITY_ID e puxar via crm.status.list
+    try{
+      // alguns retornos vêm: uf.LIST.ENTITY_ID ou uf.SETTINGS.ENTITY_ID
+      const entityId =
+        (uf && uf.LIST && uf.LIST.ENTITY_ID) ? uf.LIST.ENTITY_ID :
+        (uf && uf.SETTINGS && uf.SETTINGS.ENTITY_ID) ? uf.SETTINGS.ENTITY_ID :
+        (uf && uf.ENTITY_ID) ? uf.ENTITY_ID :
+        null;
+
+      if (entityId){
+        const sts = await bx("crm.status.list", { filter: { ENTITY_ID: entityId } }).catch(()=>null);
+        const items = (sts && (sts.result || sts)) || [];
+        const opts = (Array.isArray(items) ? items : []).map(s => ({
+          id: String(s.STATUS_ID || s.ID || ""),
+          name: String(s.NAME || s.NAME_INIT || s.STATUS_ID || s.ID || "")
+        })).filter(o => o.id && o.name);
+
+        if (opts.length){
+          STATE._ufEnumCache[fn] = opts;
+          return opts;
+        }
+      }
+    }catch(_){}
+
+    // nada encontrado
     return [];
   }
 
-  // Urgência (lista UF_CRM_1768174982)
-  async function getUrgenciaOptions() {
-    if (STATE && Array.isArray(STATE._urgenciaOpts) && STATE._urgenciaOpts.length) return STATE._urgenciaOpts;
-    try {
-      const uf = await bx("crm.deal.userfield.get", { id: "UF_CRM_1768174982" }).catch(() => null);
-      const entityId = uf && (uf.LIST && uf.LIST.ENTITY_ID) ? uf.LIST.ENTITY_ID : (uf && uf.SETTINGS && uf.SETTINGS.ENTITY_ID ? uf.SETTINGS.ENTITY_ID : null);
-      if (entityId) {
-        const sts = await bx("crm.status.list", { filter: { ENTITY_ID: entityId } }).catch(() => null);
-        const items = (sts && (sts.result || sts)) || [];
-        const arr = (Array.isArray(items) ? items : []).map((s) => ({
-          id: String(s.STATUS_ID || s.ID || ""),
-          name: String(s.NAME || s.NAME_INIT || s.STATUS_ID || s.ID || ""),
-        })).filter((x) => x.id && x.name);
-        if (arr.length) {
-          if (STATE) STATE._urgenciaOpts = arr;
-          return arr;
-        }
-      }
-    } catch (_) {}
-    return [];
-  }
+  const daysRow = [0,1,2,3,4,5,6].map((i) => {
+    return `
+      <label style="display:flex;gap:8px;align-items:center;font-size:12px;font-weight:950">
+        <input type="checkbox" class="ntDow" value="${i}" ${[1,2,3,4,5].includes(i) ? "checked" : ""}>
+        ${dowNamePt(i)}
+      </label>
+    `;
+  }).join("");
 
-  const daysRow = [0, 1, 2, 3, 4, 5, 6]
-    .map((i) => {
-      return `
-        <label style="display:flex;gap:8px;align-items:center;font-size:12px;font-weight:950">
-          <input type="checkbox" class="ntDow" value="${i}" ${
-        [1, 2, 3, 4, 5].includes(i) ? "checked" : ""
-      }>
-          ${dowNamePt(i)}
-        </label>
-      `;
-    })
-    .join("");
+  // UI base
+  openModal(`Nova tarefa — ${user.name}`, `
+    <div class="eqd-warn" id="ntWarn" style="display:none"></div>
 
-  // UI base (opções de selects serão preenchidas após abrir)
-  openModal(
-    `Nova tarefa — ${user.name}`,
-    `
-      <div class="eqd-warn" id="ntWarn" style="display:none"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div style="grid-column:1 / -1">
+        <div style="font-size:11px;font-weight:900;margin-bottom:6px">NOME DO NEGÓCIO</div>
+        <input id="ntNomeNegocio" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900"
+               placeholder="Ex.: LIGAR PARA JOÃO / COBRAR DOCUMENTOS / REUNIÃO..." />
+      </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <div style="grid-column:1 / -1">
-          <div style="font-size:11px;font-weight:900;margin-bottom:6px">NOME DO NEGÓCIO</div>
-          <input id="ntNomeNegocio" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900"
-                 placeholder="Ex.: LIGAR PARA JOÃO / COBRAR DOCUMENTOS / REUNIÃO..." />
-        </div>
+      <div>
+        <div style="font-size:11px;font-weight:900;margin-bottom:6px">PRAZO (data e hora)</div>
+        <input id="ntPrazo" type="datetime-local" value="${localDefault}"
+               style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" />
+        <div style="font-size:11px;font-weight:900;opacity:.70;margin-top:6px">Para recorrência, este horário vira o horário padrão.</div>
+      </div>
 
-        <div>
-          <div style="font-size:11px;font-weight:900;margin-bottom:6px">PRAZO (data e hora)</div>
-          <input id="ntPrazo" type="datetime-local" value="${localDefault}"
-                 style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" />
-          <div style="font-size:11px;font-weight:900;opacity:.70;margin-top:6px">Para recorrência, este horário vira o horário padrão.</div>
-        </div>
+      <div>
+        <div style="font-size:11px;font-weight:900;margin-bottom:6px">ETAPA</div>
+        <select id="ntEtapa" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
+          <option value="">Carregando…</option>
+        </select>
+        <div style="font-size:11px;font-weight:900;opacity:.70;margin-top:6px">UF: UF_CRM_1768179977089</div>
+      </div>
 
-        <div>
-          <div style="font-size:11px;font-weight:900;margin-bottom:6px">ETAPA</div>
-          <select id="ntEtapa" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
-            <option value="">Carregando…</option>
-          </select>
-          <div style="font-size:11px;font-weight:900;opacity:.70;margin-top:6px">Lista do campo UF_CRM_1768179977089.</div>
-        </div>
+      <div>
+        <div style="font-size:11px;font-weight:900;margin-bottom:6px">TIPO DA TAREFA</div>
+        <select id="ntTipoTarefa" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
+          <option value="">Carregando…</option>
+        </select>
+        <div style="font-size:11px;font-weight:900;opacity:.70;margin-top:6px">UF: UF_CRM_1768185018696</div>
+      </div>
 
-        <div>
-          <div style="font-size:11px;font-weight:900;margin-bottom:6px">TIPO DA TAREFA</div>
-          <select id="ntTipoTarefa" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
-            <option value="">Carregando…</option>
-          </select>
-          <div style="font-size:11px;font-weight:900;opacity:.70;margin-top:6px">Lista do campo UF_CRM_1768185018696.</div>
-        </div>
+      <div>
+        <div style="font-size:11px;font-weight:900;margin-bottom:6px">URGÊNCIA</div>
+        <select id="ntUrgencia" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
+          <option value="">Carregando…</option>
+        </select>
+        <div style="font-size:11px;font-weight:900;opacity:.70;margin-top:6px">UF: UF_CRM_1768174982</div>
+      </div>
 
-        <div>
-          <div style="font-size:11px;font-weight:900;margin-bottom:6px">URGÊNCIA</div>
-          <select id="ntUrgencia" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
-            <option value="">Carregando…</option>
-          </select>
-          <div style="font-size:11px;font-weight:900;opacity:.70;margin-top:6px">Lista do campo UF_CRM_1768174982.</div>
-        </div>
+      <div>
+        <div style="font-size:11px;font-weight:900;margin-bottom:6px">COLAB (opcional)</div>
+        <input id="ntColabText" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900"
+               placeholder="Digite (campo texto)" />
+        <div style="font-size:11px;font-weight:900;opacity:.70;margin-top:6px">UF: UF_CRM_1770327799</div>
+      </div>
 
-        <div>
-          <div style="font-size:11px;font-weight:900;margin-bottom:6px">COLAB (opcional)</div>
-          <input id="ntColabText" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900"
-                 placeholder="Digite o nome / referência (UF_CRM_1770327799)" />
-          <div style="font-size:11px;font-weight:900;opacity:.70;margin-top:6px">Este campo é TEXTO (UF_CRM_1770327799).</div>
-        </div>
+      <div style="grid-column:1 / -1">
+        <div style="font-size:11px;font-weight:900;margin-bottom:6px">RECORRÊNCIA</div>
+        <select id="ntRecType" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
+          <option value="NONE">Sem recorrência</option>
+          <option value="DAILY_BUSINESS">Diária (dias úteis)</option>
+          <option value="WEEKLY">Semanal (escolher dias)</option>
+          <option value="MONTHLY">Mensal (dia do mês)</option>
+          <option value="YEARLY">Anual (dia/mês)</option>
+        </select>
+      </div>
 
-        <div style="grid-column:1 / -1">
-          <div style="font-size:11px;font-weight:900;margin-bottom:6px">RECORRÊNCIA</div>
-          <select id="ntRecType" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
-            <option value="NONE">Sem recorrência</option>
-            <option value="DAILY_BUSINESS">Diária (dias úteis)</option>
-            <option value="WEEKLY">Semanal (escolher dias)</option>
-            <option value="MONTHLY">Mensal (dia do mês)</option>
-            <option value="YEARLY">Anual (dia/mês)</option>
-          </select>
-        </div>
-
-        <div style="grid-column:1 / -1;display:none" id="ntWeeklyBox">
-          <div style="font-size:11px;font-weight:900;margin-bottom:6px">DIAS DA SEMANA</div>
-          <div style="display:flex;gap:12px;flex-wrap:wrap;border:1px solid rgba(0,0,0,.10);padding:10px;border-radius:12px;background:rgba(255,255,255,.55)">
-            ${daysRow}
-          </div>
-        </div>
-
-        <div style="display:none" id="ntMonthlyBox">
-          <div style="font-size:11px;font-weight:900;margin-bottom:6px">DIA DO MÊS</div>
-          <input id="ntMonthDay" type="number" min="1" max="31" value="1"
-                 style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" />
-        </div>
-
-        <div style="display:none" id="ntYearlyBox">
-          <div style="font-size:11px;font-weight:900;margin-bottom:6px">DATA DO ANO</div>
-          <input id="ntYearMD" type="date"
-                 style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" />
-          <div style="font-size:11px;font-weight:900;opacity:.70;margin-top:6px">Escolha qualquer ano — será salvo só o dia/mês.</div>
-        </div>
-
-        <div style="grid-column:1 / -1">
-          <div style="font-size:11px;font-weight:900;margin-bottom:6px">OBS (opcional)</div>
-          <textarea id="ntObs" rows="4" style="width:100%;border-radius:14px;border:1px solid rgba(30,40,70,.16);padding:10px;font-weight:900;outline:none" placeholder="Observações..."></textarea>
-          <div style="font-size:11px;font-weight:900;opacity:.70;margin-top:6px">UF de OBS: UF_CRM_691385BE7D33D</div>
-        </div>
-
-        <div style="grid-column:1 / -1;display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
-          <button class="eqd-btn" data-action="modalClose">Cancelar</button>
-          <button class="eqd-btn eqd-btnPrimary" id="ntCreate">Criar</button>
+      <div style="grid-column:1 / -1;display:none" id="ntWeeklyBox">
+        <div style="font-size:11px;font-weight:900;margin-bottom:6px">DIAS DA SEMANA</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;border:1px solid rgba(0,0,0,.10);padding:10px;border-radius:12px;background:rgba(255,255,255,.55)">
+          ${daysRow}
         </div>
       </div>
-    `,
-    { wide: true }
-  );
+
+      <div style="display:none" id="ntMonthlyBox">
+        <div style="font-size:11px;font-weight:900;margin-bottom:6px">DIA DO MÊS</div>
+        <input id="ntMonthDay" type="number" min="1" max="31" value="1"
+               style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" />
+      </div>
+
+      <div style="display:none" id="ntYearlyBox">
+        <div style="font-size:11px;font-weight:900;margin-bottom:6px">DATA DO ANO</div>
+        <input id="ntYearMD" type="date"
+               style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" />
+        <div style="font-size:11px;font-weight:900;opacity:.70;margin-top:6px">Escolha qualquer ano — será salvo só o dia/mês.</div>
+      </div>
+
+      <div style="grid-column:1 / -1">
+        <div style="font-size:11px;font-weight:900;margin-bottom:6px">OBS (opcional)</div>
+        <textarea id="ntObs" rows="4" style="width:100%;border-radius:14px;border:1px solid rgba(30,40,70,.16);padding:10px;font-weight:900;outline:none" placeholder="Observações..."></textarea>
+        <div style="font-size:11px;font-weight:900;opacity:.70;margin-top:6px">UF OBS: UF_CRM_691385BE7D33D</div>
+      </div>
+
+      <div style="grid-column:1 / -1;display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+        <button class="eqd-btn" data-action="modalClose">Cancelar</button>
+        <button class="eqd-btn eqd-btnPrimary" id="ntCreate">Criar</button>
+      </div>
+    </div>
+  `, { wide: true });
 
   const warn = document.getElementById("ntWarn");
-  const btn = document.getElementById("ntCreate");
+  const btn  = document.getElementById("ntCreate");
 
   const selRec = document.getElementById("ntRecType");
   const weeklyBox = document.getElementById("ntWeeklyBox");
   const monthlyBox = document.getElementById("ntMonthlyBox");
   const yearlyBox = document.getElementById("ntYearlyBox");
 
-  function showErr(msg) {
+  function showErr(msg){
     warn.style.display = "block";
     warn.textContent = String(msg || "Falha.");
   }
-  function clearErr() {
+  function clearErr(){
     warn.style.display = "none";
     warn.textContent = "";
   }
 
-  function refreshRecUI() {
+  function refreshRecUI(){
     const v = String(selRec.value || "NONE");
-    weeklyBox.style.display = v === "WEEKLY" ? "block" : "none";
-    monthlyBox.style.display = v === "MONTHLY" ? "block" : "none";
-    yearlyBox.style.display = v === "YEARLY" ? "block" : "none";
+    weeklyBox.style.display = (v === "WEEKLY") ? "block" : "none";
+    monthlyBox.style.display = (v === "MONTHLY") ? "block" : "none";
+    yearlyBox.style.display = (v === "YEARLY") ? "block" : "none";
   }
   selRec.onchange = refreshRecUI;
   refreshRecUI();
 
-  // preencher selects (ETAPA, TIPO, URGÊNCIA) sem travar modal
+  // ✅ carregar opções reais e nunca deixar “(vazio)” por default
   (async () => {
-    try {
-      // ETAPA
-      const etapaSel = document.getElementById("ntEtapa");
-      const etapa = await getEtapaOptions();
-      etapaSel.innerHTML = `<option value="">(vazio)</option>` + etapa.map((o) => `<option value="${escHtml(o.id)}">${escHtml(o.name)}</option>`).join("");
+    const etapaSel = document.getElementById("ntEtapa");
+    const tipoSel  = document.getElementById("ntTipoTarefa");
+    const urgSel   = document.getElementById("ntUrgencia");
 
-      // TIPO TAREFA
-      const tipoSel = document.getElementById("ntTipoTarefa");
-      const tipos = await getTipoTarefaOptions();
-      tipoSel.innerHTML = `<option value="">(vazio)</option>` + tipos.map((o) => `<option value="${escHtml(o.id)}">${escHtml(o.name)}</option>`).join("");
+    try{
+      setSelectLoading(etapaSel, "Carregando etapas…");
+      setSelectLoading(tipoSel,  "Carregando tipos…");
+      setSelectLoading(urgSel,   "Carregando urgências…");
 
-      // URGÊNCIA
-      const urgSel = document.getElementById("ntUrgencia");
-      const urgs = await getUrgenciaOptions();
-      urgSel.innerHTML = `<option value="">(vazio)</option>` + urgs.map((o) => `<option value="${escHtml(o.id)}">${escHtml(o.name)}</option>`).join("");
-    } catch (e) {
-      // se falhar, deixa vazio, mas não quebra
-      try {
-        const etapaSel = document.getElementById("ntEtapa");
-        const tipoSel = document.getElementById("ntTipoTarefa");
-        const urgSel = document.getElementById("ntUrgencia");
-        if (etapaSel) etapaSel.innerHTML = `<option value="">(não carregou)</option>`;
-        if (tipoSel) tipoSel.innerHTML = `<option value="">(não carregou)</option>`;
-        if (urgSel) urgSel.innerHTML = `<option value="">(não carregou)</option>`;
-      } catch (_) {}
+      const [etapas, tipos, urgs] = await Promise.all([
+        getEnumOptionsByFieldName("UF_CRM_1768179977089"),
+        getEnumOptionsByFieldName("UF_CRM_1768185018696"),
+        getEnumOptionsByFieldName("UF_CRM_1768174982"),
+      ]);
+
+      if (etapas && etapas.length) setSelectOptions(etapaSel, etapas, "Selecione a etapa…");
+      else setSelectFallback(etapaSel, "Sem opções (ETAPA)");
+
+      if (tipos && tipos.length) setSelectOptions(tipoSel, tipos, "Selecione o tipo…");
+      else setSelectFallback(tipoSel, "Sem opções (TIPO)");
+
+      if (urgs && urgs.length) setSelectOptions(urgSel, urgs, "Selecione a urgência…");
+      else setSelectFallback(urgSel, "Sem opções (URGÊNCIA)");
+    }catch(e){
+      setSelectFallback(document.getElementById("ntEtapa"), "Não carregou (ETAPA)");
+      setSelectFallback(document.getElementById("ntTipoTarefa"), "Não carregou (TIPO)");
+      setSelectFallback(document.getElementById("ntUrgencia"), "Não carregou (URGÊNCIA)");
     }
   })();
 
@@ -2121,7 +2107,7 @@ function openNewTaskModalForUser(user, opts) {
     const lk = `ntCreate:${user.userId}`;
     if (!lockTry(lk)) return;
 
-    try {
+    try{
       btn.disabled = true;
       clearErr();
 
@@ -2134,10 +2120,10 @@ function openNewTaskModalForUser(user, opts) {
       const prazoIso = localInputToIsoWithOffset(prazoLocal);
       if (!prazoIso) throw new Error("Prazo inválido.");
 
-      const etapaVal = String(document.getElementById("ntEtapa").value || "").trim(); // UF_CRM_1768179977089
-      const taskType = String(document.getElementById("ntTipoTarefa").value || "").trim(); // UF_CRM_1768185018696
-      const urgency = String(document.getElementById("ntUrgencia").value || "").trim(); // UF_CRM_1768174982
-      const colabText = String(document.getElementById("ntColabText").value || "").trim(); // UF_CRM_1770327799
+      const etapaVal = String(document.getElementById("ntEtapa").value || "").trim();         // UF_CRM_1768179977089
+      const taskType = String(document.getElementById("ntTipoTarefa").value || "").trim();    // UF_CRM_1768185018696
+      const urgency  = String(document.getElementById("ntUrgencia").value || "").trim();      // UF_CRM_1768174982
+      const colabText= String(document.getElementById("ntColabText").value || "").trim();     // UF_CRM_1770327799
 
       const recType = String(selRec.value || "NONE");
       const dt = new Date(prazoIso);
@@ -2147,7 +2133,6 @@ function openNewTaskModalForUser(user, opts) {
       setBusy("Criando…");
 
       if (recType === "NONE") {
-        // criar tarefa simples (DEAL direto na coluna do usuário)
         const etapaId = await stageIdForUserName(user.name);
         if (!etapaId) throw new Error(`Não encontrei a coluna ${user.name} na pipeline.`);
 
@@ -2157,17 +2142,16 @@ function openNewTaskModalForUser(user, opts) {
           TITLE: nomeNegocio,
           ASSIGNED_BY_ID: Number(user.userId),
 
-          // seus UFs:
-          UF_CRM_691385BE7D33D: obs || "",          // OBS (pode ser vazio)
-          [UF_PRAZO]: prazoIso,                      // prazo
-          UF_CRM_1768179977089: etapaVal || "",      // ETAPA (lista)
-          UF_CRM_1768185018696: taskType || "",      // TIPO DA TAREFA (lista)
-          UF_CRM_1768174982: urgency || "",          // URGÊNCIA (lista)
-          UF_CRM_1770327799: colabText || "",        // COLAB (TEXTO)
+          [UF_PRAZO]: prazoIso,
+
+          // seus UFs
+          UF_CRM_1768179977089: etapaVal || "",
+          UF_CRM_1768185018696: taskType || "",
+          UF_CRM_1768174982: urgency || "",
+          UF_CRM_1770327799: colabText || "",
         };
 
-        // se você não quiser gravar OBS vazio, pode comentar esta linha:
-        if (!obs) delete fields.UF_CRM_691385BE7D33D;
+        if (obs) fields.UF_CRM_691385BE7D33D = obs;
 
         await bx("crm.deal.add", { fields });
         closeModal();
@@ -2176,16 +2160,15 @@ function openNewTaskModalForUser(user, opts) {
         return;
       }
 
-      // criar regra recorrente (salva no Bitrix)
+      // regra recorrente (salva no Bitrix)
       const rule = {
         id: makeRuleId(),
         title: nomeNegocio,
         type: recType,
-        hh,
-        mm,
-
-        // guardar payload para gerar instâncias completas
+        hh, mm,
         obs: obs || "",
+
+        // guardar os campos para gerar instâncias completas
         etapaVal: etapaVal || "",
         taskType: taskType || "",
         urgency: urgency || "",
@@ -2195,17 +2178,15 @@ function openNewTaskModalForUser(user, opts) {
       };
 
       if (recType === "WEEKLY") {
-        const dows = [...document.querySelectorAll(".ntDow:checked")].map((x) => Number(x.value));
+        const dows = [...document.querySelectorAll(".ntDow:checked")].map(x => Number(x.value));
         if (!dows.length) throw new Error("Selecione ao menos 1 dia da semana.");
         rule.weekDays = dows;
       }
-
       if (recType === "MONTHLY") {
         const md = Number(document.getElementById("ntMonthDay").value || 0);
         if (!(md >= 1 && md <= 31)) throw new Error("Dia do mês inválido.");
         rule.monthDay = md;
       }
-
       if (recType === "YEARLY") {
         const v = String(document.getElementById("ntYearMD").value || "").trim();
         const m = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -2213,7 +2194,6 @@ function openNewTaskModalForUser(user, opts) {
         rule.yearMD = `${m[2]}-${m[3]}`; // MM-DD
       }
 
-      // garantir regras carregadas e salvar
       if (!STATE.recurRulesByUser || STATE.recurRulesByUser.size === 0) {
         await loadRecurrenceConfigDeals();
       }
@@ -2221,11 +2201,10 @@ function openNewTaskModalForUser(user, opts) {
 
       closeModal();
 
-      // gerar instâncias (janela) imediatamente
       await generateRecurringDealsWindow();
       await refreshData(true);
       renderCurrentView();
-    } catch (e) {
+    } catch(e){
       showErr("Falha:\n" + (e.message || e));
     } finally {
       btn.disabled = false;
