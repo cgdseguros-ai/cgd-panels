@@ -1,11 +1,15 @@
-/* eqd.js — GET • CGD CORRETORA (ATUALIZAÇÃO v4.2)
-   Correções desta versão (além do que já existe no v4.1):
-   1) EDITAR PRAZO: não precisa mais clicar 2x (lock + botão desabilita + update otimista)
-   2) Urgência clicável dentro do card (clique no chip de urgência abre o modal de urgência)
-   3) Modo escuro: fundo cinza escuro no painel principal (e ajustes de contraste no grid de usuários)
-   4) Painel individual > LEADS:
-      a) ao editar/mover/criar follow-up/editar OBS de lead -> volta para o modal LEADS (não para o painel)
-      b) contagem de cards por coluna + botão para criar lead manualmente (com todos os dados)
+/* eqd.js — GET • CGD CORRETORA (ATUALIZAÇÃO v4.2 + AJUSTES)
+   ✅ Ajustes solicitados:
+   1) NOVA TAREFA (no painel individual + no MULTI SELEÇÃO) com recorrência:
+      - diária (dias úteis)
+      - semanal (1+ dias da semana)
+      - mensal (dia do mês)
+      - anual (dia/mês)
+      => Recorrência FUNCIONA em PCs diferentes: salva regras no Bitrix em um Deal na etapa "GET • RECORRÊNCIA"
+         (STATUS_ID: C17:UC_IUQR52) usando o UF de OBS: UF_CRM_691385BE7D33D (JSON).
+      => O painel gera automaticamente as instâncias futuras (janela de 45 dias) sem duplicar (marker [RUID=...]).
+   2) Botão FINANCEIRO da USER 813 aponta para:
+      https://cgdcorretorabase.bitrix24.site/controlefinanceiro/
 */
 
 (function () {
@@ -18,7 +22,7 @@
 
   const INTRANET_URL = "https://cgdcorretora.bitrix24.site/";
   const VENDAS_URL = "https://cgdcorretorabase.bitrix24.site/vendas/";
-  const FINANCEIRO_URL = "https://cgdcorretorabase.bitrix24.site/controlefinanceiro/";
+  const FINANCEIRO_URL = "https://cgdcorretorabase.bitrix24.site/controlefinanceiro/"; // ✅ AJUSTE 2
   const SEGUROS_URL = "https://getcgdcorretora.bitrix24.site/seguros/";
 
   const REFRESH_MS = 20000;
@@ -27,33 +31,38 @@
 
   const CATEGORY_MAIN = 17;
 
+  // ✅ RECORRÊNCIA (Bitrix)
+  const RECURRENCE_STAGE_ID = "C17:UC_IUQR52"; // GET • RECORRÊNCIA
+  const RECURRENCE_TITLE_PREFIX = "RECORRÊNCIA • ";
+  const RECURRENCE_WINDOW_DAYS = 45; // janela de geração de instâncias futuras
+  const RECURRENCE_MARKER_RE = /\[RUID=([^\]]+)\]/i;
+
   /* ✅ PATCH ÚNICO: ajuste as equipes para ÔMEGA
-   -> Cole e substitua APENAS o bloco USERS no seu eqd.js por este abaixo.
-*/
+     -> Cole e substitua APENAS o bloco USERS no seu eqd.js por este abaixo.
+  */
+  const USERS = [
+    { name: "Manuela", userId: 813, team: "DELTA" },
+    { name: "Maria Clara", userId: 841, team: "DELTA" },
+    { name: "Beatriz", userId: 3387, team: "DELTA" },
+    { name: "Bruna Luisa", userId: 3081, team: "DELTA" },
 
-const USERS = [
-  { name: "Manuela", userId: 813, team: "DELTA" },
-  { name: "Maria Clara", userId: 841, team: "DELTA" },
-  { name: "Beatriz", userId: 3387, team: "DELTA" },
-  { name: "Bruna Luisa", userId: 3081, team: "DELTA" },
+    { name: "Aline", userId: 15, team: "ALPHA" },
+    { name: "Adriana", userId: 19, team: "ALPHA" },
+    { name: "Andreyna", userId: 17, team: "ALPHA" },
+    { name: "Mariana", userId: 23, team: "ALPHA" },
+    { name: "Josiane", userId: 811, team: "ALPHA" },
 
-  { name: "Aline", userId: 15, team: "ALPHA" },
-  { name: "Adriana", userId: 19, team: "ALPHA" },
-  { name: "Andreyna", userId: 17, team: "ALPHA" },
-  { name: "Mariana", userId: 23, team: "ALPHA" },
-  { name: "Josiane", userId: 811, team: "ALPHA" },
+    { name: "Livia Alves", userId: 3079, team: "BETA" },
+    { name: "Fernanda Silva", userId: 3083, team: "BETA" },
+    { name: "Nicolle Belmonte", userId: 3085, team: "BETA" },
+    { name: "Anna Clara", userId: 3389, team: "BETA" },
 
-  { name: "Livia Alves", userId: 3079, team: "BETA" },
-  { name: "Fernanda Silva", userId: 3083, team: "BETA" },
-  { name: "Nicolle Belmonte", userId: 3085, team: "BETA" },
-  { name: "Anna Clara", userId: 3389, team: "BETA" },
-
-  // ✅ EQUIPE ÔMEGA
-  { name: "Gabriel", userId: 815, team: "ÔMEGA" },
-  { name: "Amanda", userId: 269, team: "ÔMEGA" },
-  { name: "Talita", userId: 29, team: "ÔMEGA" },
-  { name: "Vivian", userId: 3101, team: "ÔMEGA" },
-];
+    // ✅ EQUIPE ÔMEGA
+    { name: "Gabriel", userId: 815, team: "ÔMEGA" },
+    { name: "Amanda", userId: 269, team: "ÔMEGA" },
+    { name: "Talita", userId: 29, team: "ÔMEGA" },
+    { name: "Vivian", userId: 3101, team: "ÔMEGA" },
+  ];
 
   const LEAD_USERS = new Set(["15", "19", "17", "23", "811", "3081", "3079", "3083", "3085", "3389"]);
   const SEGUROS_USERS = new Set(["815", "269", "29", "3101"]);
@@ -77,7 +86,7 @@ const USERS = [
   const UF_ETAPA = "UF_CRM_1768179977089";
   const UF_COLAB = "UF_CRM_1770327799";
   const UF_PRAZO = "UF_CRM_1768175087";
-  const UF_OBS = "UF_CRM_691385BE7D33D";
+  const UF_OBS = "UF_CRM_691385BE7D33D"; // ✅ confirmado
   const DONE_STAGE_NAME = "CONCLUÍDO";
 
   // LEADS — campos
@@ -594,6 +603,11 @@ const USERS = [
     return `${y}-${m}-${d}T${pad(hh)}:${pad(mm)}:00${sign}${oh}:${om}`;
   }
 
+  function isoFromYMDHM(y, mo1, d, hh, mm) {
+    const dt = new Date(y, mo1 - 1, d, hh || 0, mm || 0, 0, 0);
+    return isoFromDateAndTimeParts(dt, dt.getHours(), dt.getMinutes());
+  }
+
   function isUrgenteText(urgTxt) {
     const u = norm(urgTxt);
     if (!u) return false;
@@ -715,6 +729,11 @@ const USERS = [
 
     footerPhotosLoaded: false,
     bootstrapLoaded: false,
+
+    // ✅ recorrência
+    recurConfigDealIdByUser: new Map(), // userId -> dealId
+    recurRulesByUser: new Map(),        // userId -> rules[]
+    recurLastGenAt: 0,
   };
 
   async function enums(uf) {
@@ -1010,6 +1029,247 @@ const USERS = [
       await Promise.all(FOOTER_PARTNERS.map((p) => ensureUserPhoto(p.userId, "")));
       STATE.footerPhotosLoaded = true;
     }
+  }
+
+  // =========================
+  // 9.1) RECORRÊNCIA — storage e geração (Bitrix)
+  // =========================
+  function safeJsonParse(s) {
+    try { return JSON.parse(String(s || "")); } catch (_) { return null; }
+  }
+
+  function makeRuleId() {
+    return "R" + Math.random().toString(16).slice(2) + Date.now().toString(16);
+  }
+
+  function dowNamePt(i){
+    return ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"][i] || String(i);
+  }
+
+  function ymdKey(d){
+    const y = d.getFullYear();
+    const m = String(d.getMonth()+1).padStart(2,"0");
+    const dd = String(d.getDate()).padStart(2,"0");
+    return `${y}-${m}-${dd}`;
+  }
+
+  function nextDays(fromDate, n){
+    const out = [];
+    const base = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate(), 0,0,0,0);
+    for(let i=0;i<=n;i++){
+      const d = new Date(base);
+      d.setDate(base.getDate()+i);
+      out.push(d);
+    }
+    return out;
+  }
+
+  function isWeekday(d){
+    const w = d.getDay();
+    return w !== 0 && w !== 6;
+  }
+
+  function occursOn(rule, d){
+    const t = (rule && rule.type) ? String(rule.type) : "";
+    if (t === "DAILY_BUSINESS") return isWeekday(d);
+    if (t === "WEEKLY") {
+      const arr = Array.isArray(rule.weekDays) ? rule.weekDays.map(Number) : [];
+      return arr.includes(d.getDay());
+    }
+    if (t === "MONTHLY") {
+      const day = Number(rule.monthDay || 0);
+      return day > 0 && d.getDate() === day;
+    }
+    if (t === "YEARLY") {
+      const md = String(rule.yearMD || "").trim(); // "MM-DD"
+      const m = md.match(/^(\d{2})-(\d{2})$/);
+      if (!m) return false;
+      const mm = Number(m[1]);
+      const dd = Number(m[2]);
+      return (d.getMonth()+1) === mm && d.getDate() === dd;
+    }
+    return false;
+  }
+
+  function markerFor(ruleId, dateKey){
+    return `[RUID=${ruleId}:${dateKey}]`;
+  }
+
+  function extractMarkersFromDeals(deals){
+    const set = new Set();
+    (deals || []).forEach((d) => {
+      const txt = String(d && (d._obs || d[UF_OBS] || "")).trim();
+      if (!txt) return;
+      const m = txt.match(RECURRENCE_MARKER_RE);
+      if (m && m[1]) set.add(String(m[1]).trim());
+    });
+    return set;
+  }
+
+  async function loadRecurrenceConfigDeals() {
+    // Pega todos os deals de configuração (categoria 17, etapa GET • RECORRÊNCIA)
+    const select = ["ID","TITLE","STAGE_ID","ASSIGNED_BY_ID", UF_OBS, "DATE_MODIFY", "DATE_CREATE"];
+    const cfgDeals = await bxAll("crm.deal.list", {
+      filter: { CATEGORY_ID: CATEGORY_MAIN, STAGE_ID: RECURRENCE_STAGE_ID },
+      select,
+      order: { ID: "DESC" },
+    }).catch(() => []);
+
+    // Mapear por user
+    STATE.recurConfigDealIdByUser = new Map();
+    STATE.recurRulesByUser = new Map();
+
+    (cfgDeals || []).forEach((d) => {
+      const uid = String(d.ASSIGNED_BY_ID || "").trim();
+      if (!uid) return;
+
+      // preferir o mais novo
+      if (!STATE.recurConfigDealIdByUser.has(uid)) {
+        STATE.recurConfigDealIdByUser.set(uid, String(d.ID));
+      }
+
+      const raw = String(d[UF_OBS] || "").trim();
+      const j = safeJsonParse(raw);
+      const rules = (j && Array.isArray(j.rules)) ? j.rules : [];
+      STATE.recurRulesByUser.set(uid, rules);
+    });
+  }
+
+  async function ensureConfigDealForUser(userId) {
+    const uid = String(userId);
+    if (STATE.recurConfigDealIdByUser.has(uid)) return STATE.recurConfigDealIdByUser.get(uid);
+
+    // criar um config deal se não existir
+    const fields = {
+      CATEGORY_ID: Number(CATEGORY_MAIN),
+      STAGE_ID: String(RECURRENCE_STAGE_ID),
+      TITLE: `${RECURRENCE_TITLE_PREFIX}${uid}`,
+      ASSIGNED_BY_ID: Number(uid),
+      [UF_OBS]: JSON.stringify({ ver: 1, userId: uid, rules: [] }),
+    };
+
+    const id = await bx("crm.deal.add", { fields });
+    const dealId = String(id);
+    STATE.recurConfigDealIdByUser.set(uid, dealId);
+    STATE.recurRulesByUser.set(uid, []);
+    return dealId;
+  }
+
+  async function saveRulesForUser(userId, rules) {
+    const uid = String(userId);
+    const dealId = await ensureConfigDealForUser(uid);
+    const payload = JSON.stringify({ ver: 1, userId: uid, rules: Array.isArray(rules) ? rules : [] });
+    await bx("crm.deal.update", { id: String(dealId), fields: { [UF_OBS]: payload } });
+    STATE.recurRulesByUser.set(uid, Array.isArray(rules) ? rules : []);
+  }
+
+  async function addRuleForUser(userId, rule) {
+    const uid = String(userId);
+    const cur = STATE.recurRulesByUser.get(uid) || [];
+    const next = cur.slice();
+    next.push(rule);
+    await saveRulesForUser(uid, next);
+  }
+
+  async function deleteRuleForUser(userId, ruleId) {
+    const uid = String(userId);
+    const cur = STATE.recurRulesByUser.get(uid) || [];
+    const next = cur.filter((r) => String(r.id) !== String(ruleId));
+    await saveRulesForUser(uid, next);
+  }
+
+  async function generateRecurringDealsWindow() {
+    // evitar rodar o gerador muitas vezes
+    const now = Date.now();
+    if (now - STATE.recurLastGenAt < 60 * 1000) return;
+    STATE.recurLastGenAt = now;
+
+    // garantir cache de regras
+    if (!STATE.recurRulesByUser || STATE.recurRulesByUser.size === 0) {
+      await loadRecurrenceConfigDeals();
+    }
+
+    const markers = extractMarkersFromDeals(STATE.dealsAll || []);
+    const today = new Date();
+    const days = nextDays(today, RECURRENCE_WINDOW_DAYS);
+
+    // montar fila de criações (serial para evitar rate limit)
+    for (const u of USERS) {
+      const uid = String(u.userId);
+      const rules = STATE.recurRulesByUser.get(uid) || [];
+      if (!rules.length) continue;
+
+      const stageId = await stageIdForUserName(u.name);
+      if (!stageId) continue;
+
+      for (const rule of rules) {
+        const rid = String(rule.id || "").trim();
+        const title = String(rule.title || "").trim();
+        if (!rid || !title) continue;
+
+        const hh = Number(rule.hh ?? 9);
+        const mm = Number(rule.mm ?? 0);
+
+        for (const d of days) {
+          // mensal: se day > dias do mês, não ocorre (implicitamente occursOn já falha)
+          if (!occursOn(rule, d)) continue;
+
+          const key = ymdKey(d);
+          const mk = `${rid}:${key}`;
+          if (markers.has(mk)) continue;
+
+          const iso = isoFromDateAndTimeParts(d, hh, mm);
+          const obs = (rule.obs ? String(rule.obs).trim() : "").replace(/\[RUID=.*?\]/g, "").trim();
+          const marker = markerFor(rid, key);
+
+          const fields = {
+            CATEGORY_ID: Number(CATEGORY_MAIN),
+            STAGE_ID: String(stageId),
+            TITLE: title,
+            ASSIGNED_BY_ID: Number(uid),
+            [UF_PRAZO]: iso,
+            [UF_OBS]: (obs ? (obs + "\n") : "") + marker,
+          };
+
+          try {
+            setSoftStatus("Gerando recorrências…");
+            const newId = await bx("crm.deal.add", { fields });
+            // atualizar markers in-memory para evitar duplicar na mesma execução
+            markers.add(mk);
+
+            // também “espelhar” minimamente no STATE para reduzir piscadas
+            STATE.dealsAll.unshift({
+              ID: String(newId),
+              TITLE: title,
+              STAGE_ID: String(stageId),
+              ASSIGNED_BY_ID: Number(uid),
+              DATE_CREATE: new Date().toISOString(),
+              DATE_MODIFY: new Date().toISOString(),
+              [UF_PRAZO]: iso,
+              [UF_OBS]: (obs ? (obs + "\n") : "") + marker,
+              _prazo: new Date(iso).toISOString(),
+              _late: false,
+              _urgId: "",
+              _urgTxt: "",
+              _tarefaId: "",
+              _tarefaTxt: "",
+              _etapaId: "",
+              _etapaTxt: "",
+              _colabId: "",
+              _colabTxt: "",
+              _obs: (obs ? (obs + "\n") : "") + marker,
+              _hasObs: true,
+              _assigned: String(uid),
+              _accent: dealAccent({ ID: String(newId), TITLE: title }),
+            });
+          } catch (_) {
+            // se bater rate limit / erro temporário, para para manter painel estável
+            return;
+          }
+        }
+      }
+    }
+    setSoftStatus("JS: ok");
   }
 
   // =========================
@@ -1578,6 +1838,261 @@ const USERS = [
   }
 
   // =========================
+  // 18.1) NOVA TAREFA (normal + recorrência) — UI e criação
+  // =========================
+  function openNewTaskModalForUser(user, opts) {
+    const dt = new Date();
+    dt.setMinutes(dt.getMinutes() + 60);
+    const localDefault = new Date(dt.getTime() - dt.getTimezoneOffset()*60000).toISOString().slice(0, 16);
+
+    const daysRow = [0,1,2,3,4,5,6].map((i) => {
+      return `
+        <label style="display:flex;gap:8px;align-items:center;font-size:12px;font-weight:950">
+          <input type="checkbox" class="ntDow" value="${i}" ${[1,2,3,4,5].includes(i) ? "checked" : ""}>
+          ${dowNamePt(i)}
+        </label>
+      `;
+    }).join("");
+
+    openModal(`Nova tarefa — ${user.name}`, `
+      <div class="eqd-warn" id="ntWarn"></div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div style="grid-column:1 / -1">
+          <div style="font-size:11px;font-weight:900;margin-bottom:6px">TÍTULO</div>
+          <input id="ntTitle" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900"
+                 placeholder="Ex.: LIGAR PARA JOÃO / COBRAR DOCUMENTOS / REUNIÃO..." />
+        </div>
+
+        <div>
+          <div style="font-size:11px;font-weight:900;margin-bottom:6px">PRAZO (dia e hora)</div>
+          <input id="ntPrazo" type="datetime-local" value="${localDefault}"
+                 style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" />
+          <div style="font-size:11px;font-weight:900;opacity:.70;margin-top:6px">Para recorrência, este horário vira o horário padrão.</div>
+        </div>
+
+        <div>
+          <div style="font-size:11px;font-weight:900;margin-bottom:6px">RECORRÊNCIA</div>
+          <select id="ntRecType" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
+            <option value="NONE">Sem recorrência</option>
+            <option value="DAILY_BUSINESS">Diária (dias úteis)</option>
+            <option value="WEEKLY">Semanal (escolher dias)</option>
+            <option value="MONTHLY">Mensal (dia do mês)</option>
+            <option value="YEARLY">Anual (dia/mês)</option>
+          </select>
+        </div>
+
+        <div style="grid-column:1 / -1;display:none" id="ntWeeklyBox">
+          <div style="font-size:11px;font-weight:900;margin-bottom:6px">DIAS DA SEMANA</div>
+          <div style="display:flex;gap:12px;flex-wrap:wrap;border:1px solid rgba(0,0,0,.10);padding:10px;border-radius:12px;background:rgba(255,255,255,.55)">
+            ${daysRow}
+          </div>
+        </div>
+
+        <div style="display:none" id="ntMonthlyBox">
+          <div style="font-size:11px;font-weight:900;margin-bottom:6px">DIA DO MÊS</div>
+          <input id="ntMonthDay" type="number" min="1" max="31" value="1"
+                 style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" />
+        </div>
+
+        <div style="display:none" id="ntYearlyBox">
+          <div style="font-size:11px;font-weight:900;margin-bottom:6px">DATA DO ANO</div>
+          <input id="ntYearMD" type="date"
+                 style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" />
+          <div style="font-size:11px;font-weight:900;opacity:.70;margin-top:6px">Escolha qualquer ano — será salvo só o dia/mês.</div>
+        </div>
+
+        <div style="grid-column:1 / -1">
+          <div style="font-size:11px;font-weight:900;margin-bottom:6px">OBS (opcional)</div>
+          <textarea id="ntObs" rows="4" style="width:100%;border-radius:14px;border:1px solid rgba(30,40,70,.16);padding:10px;font-weight:900;outline:none" placeholder="Observações..."></textarea>
+        </div>
+
+        <div style="grid-column:1 / -1;display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+          <button class="eqd-btn" data-action="modalClose">Cancelar</button>
+          <button class="eqd-btn eqd-btnPrimary" id="ntCreate">Criar</button>
+        </div>
+      </div>
+    `, { wide: true });
+
+    const sel = document.getElementById("ntRecType");
+    const weeklyBox = document.getElementById("ntWeeklyBox");
+    const monthlyBox = document.getElementById("ntMonthlyBox");
+    const yearlyBox = document.getElementById("ntYearlyBox");
+    const warn = document.getElementById("ntWarn");
+    const btn = document.getElementById("ntCreate");
+
+    function refreshRecUI(){
+      const v = String(sel.value || "NONE");
+      weeklyBox.style.display = (v === "WEEKLY") ? "block" : "none";
+      monthlyBox.style.display = (v === "MONTHLY") ? "block" : "none";
+      yearlyBox.style.display = (v === "YEARLY") ? "block" : "none";
+    }
+    sel.onchange = refreshRecUI;
+    refreshRecUI();
+
+    btn.onclick = async () => {
+      const lk = `ntCreate:${user.userId}`;
+      if (!lockTry(lk)) return;
+
+      try {
+        btn.disabled = true;
+        warn.style.display = "none";
+        warn.textContent = "";
+
+        const title = String(document.getElementById("ntTitle").value || "").trim();
+        if (!title) throw new Error("Preencha o TÍTULO.");
+
+        const prazoLocal = String(document.getElementById("ntPrazo").value || "").trim();
+        const prazoIso = localInputToIsoWithOffset(prazoLocal);
+        if (!prazoIso) throw new Error("Prazo inválido.");
+
+        const obs = String(document.getElementById("ntObs").value || "").trim();
+
+        const recType = String(sel.value || "NONE");
+        const dt = new Date(prazoIso);
+        const hh = dt.getHours();
+        const mm = dt.getMinutes();
+
+        setBusy("Criando…");
+
+        if (recType === "NONE") {
+          // criar tarefa simples
+          const stageId = await stageIdForUserName(user.name);
+          if (!stageId) throw new Error(`Não encontrei a coluna ${user.name} na pipeline.`);
+
+          const fields = {
+            CATEGORY_ID: Number(CATEGORY_MAIN),
+            STAGE_ID: String(stageId),
+            TITLE: title,
+            ASSIGNED_BY_ID: Number(user.userId),
+            [UF_PRAZO]: prazoIso,
+          };
+          if (obs) fields[UF_OBS] = obs;
+
+          await bx("crm.deal.add", { fields });
+          closeModal();
+          await refreshData(true);
+          renderCurrentView();
+          return;
+        }
+
+        // criar regra recorrente (salva no Bitrix)
+        const rule = {
+          id: makeRuleId(),
+          title,
+          type: recType,
+          hh, mm,
+          obs: obs || "",
+          createdAt: new Date().toISOString(),
+        };
+
+        if (recType === "WEEKLY") {
+          const dows = [...document.querySelectorAll(".ntDow:checked")].map((x) => Number(x.value));
+          if (!dows.length) throw new Error("Selecione ao menos 1 dia da semana.");
+          rule.weekDays = dows;
+        }
+
+        if (recType === "MONTHLY") {
+          const md = Number(document.getElementById("ntMonthDay").value || 0);
+          if (!(md >= 1 && md <= 31)) throw new Error("Dia do mês inválido.");
+          rule.monthDay = md;
+        }
+
+        if (recType === "YEARLY") {
+          const v = String(document.getElementById("ntYearMD").value || "").trim();
+          const m = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+          if (!m) throw new Error("Escolha uma data válida no campo ANUAL.");
+          rule.yearMD = `${m[2]}-${m[3]}`; // MM-DD
+        }
+
+        // garantir regras carregadas e salvar
+        if (!STATE.recurRulesByUser || STATE.recurRulesByUser.size === 0) {
+          await loadRecurrenceConfigDeals();
+        }
+        await addRuleForUser(user.userId, rule);
+
+        closeModal();
+
+        // gerar instâncias (janela) imediatamente
+        await generateRecurringDealsWindow();
+        await refreshData(true);
+        renderCurrentView();
+      } catch (e) {
+        warn.style.display = "block";
+        warn.textContent = "Falha:\n" + (e.message || e);
+      } finally {
+        btn.disabled = false;
+        clearBusy();
+        lockRelease(lk);
+      }
+    };
+  }
+
+  function openRecurrenceManagerModalForUser(user) {
+    openModal(`Recorrências — ${user.name}`, `
+      <div class="eqd-warn" id="rmWarn"></div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:space-between">
+        <div style="font-size:12px;font-weight:950;opacity:.85">Gerenciar regras salvas no Bitrix (GET • RECORRÊNCIA).</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="eqd-btn" data-action="newTaskModal" data-userid="${user.userId}">+ Nova tarefa</button>
+          <button class="eqd-btn" data-action="modalClose">Fechar</button>
+        </div>
+      </div>
+      <div id="rmList" style="margin-top:12px;display:flex;flex-direction:column;gap:10px"></div>
+    `, { wide: true });
+
+    const warn = document.getElementById("rmWarn");
+    const list = document.getElementById("rmList");
+
+    (async () => {
+      try {
+        setBusy("Carregando recorrências…");
+        await loadRecurrenceConfigDeals();
+        clearBusy();
+
+        const rules = STATE.recurRulesByUser.get(String(user.userId)) || [];
+        if (!rules.length) {
+          list.innerHTML = `<div class="eqd-empty">Nenhuma recorrência cadastrada.</div>`;
+          return;
+        }
+
+        const row = (r) => {
+          const type = String(r.type || "");
+          let desc = "";
+          if (type === "DAILY_BUSINESS") desc = "Diária (dias úteis)";
+          if (type === "WEEKLY") desc = "Semanal: " + (Array.isArray(r.weekDays) ? r.weekDays.map(dowNamePt).join(", ") : "—");
+          if (type === "MONTHLY") desc = "Mensal: dia " + String(r.monthDay || "—");
+          if (type === "YEARLY") desc = "Anual: " + String(r.yearMD || "—");
+          const time = `${String(r.hh ?? 9).padStart(2,"0")}:${String(r.mm ?? 0).padStart(2,"0")}`;
+
+          return `
+            <div class="eqd-card" style="--accent-rgb:90,140,255">
+              <div class="eqd-bar"></div>
+              <div class="eqd-inner">
+                <div style="display:flex;gap:10px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap">
+                  <div style="font-weight:950">${escHtml(String(r.title || ""))}</div>
+                  <div style="display:flex;gap:8px;flex-wrap:wrap">
+                    <button class="eqd-smallBtn eqd-smallBtnDanger" data-action="recurDelete" data-userid="${user.userId}" data-ruleid="${escHtml(r.id)}">Excluir regra</button>
+                  </div>
+                </div>
+                <div style="font-size:11px;font-weight:900;opacity:.80">Tipo: <strong>${escHtml(desc)}</strong> • Hora: <strong>${escHtml(time)}</strong></div>
+                ${r.obs ? `<div class="eqd-obsLine">OBS: ${escHtml(trunc(r.obs, 180))}</div>` : ``}
+                <div style="font-size:11px;font-weight:900;opacity:.65">ID: ${escHtml(r.id)}</div>
+              </div>
+            </div>
+          `;
+        };
+
+        list.innerHTML = rules.map(row).join("");
+      } catch (e) {
+        clearBusy();
+        warn.style.display = "block";
+        warn.textContent = "Falha:\n" + (e.message || e);
+      }
+    })();
+  }
+
+  // =========================
   // 19) LEADS MODAL (OBS via modal + busca preta + contadores + criar manual)
   // =========================
   function leadMatchesKw(l, kwNorm) {
@@ -2055,10 +2570,15 @@ const USERS = [
     const hasLeadsBtn = LEAD_USERS.has(String(user.userId));
     const leadsBtn = hasLeadsBtn ? `<button class="eqd-btn" data-action="leadsModal" data-userid="${user.userId}" id="btnLeads">LEADS</button>` : ``;
 
+    // ✅ FINANCEIRO só para 813, com link já ajustado no FINANCEIRO_URL
     const finBtn = String(user.userId) === "813" ? `<a class="eqd-btn" href="${FINANCEIRO_URL}" target="_blank" rel="noopener">FINANCEIRO</a>` : ``;
     const segBtn = SEGUROS_USERS.has(String(user.userId)) ? `<a class="eqd-btn" href="${SEGUROS_URL}" target="_blank" rel="noopener">SEGUROS</a>` : ``;
 
     const followListBtn = `<button class="eqd-btn" data-action="followList" data-userid="${user.userId}">LISTA DE FOLLOW-UP</button>`;
+
+    // ✅ NOVA TAREFA + GERENCIAR RECORRÊNCIA
+    const newTaskBtn = `<button class="eqd-btn eqd-btnPrimary" data-action="newTaskModal" data-userid="${user.userId}">NOVA TAREFA</button>`;
+    const recurBtn = `<button class="eqd-btn" data-action="recurManager" data-userid="${user.userId}">RECORRÊNCIA</button>`;
 
     const isSpecial = SPECIAL_PANEL_USERS.has(String(user.userId));
 
@@ -2084,6 +2604,8 @@ const USERS = [
             ${segBtn}
             ${followListBtn}
             <button class="eqd-btn" data-action="followUpModal" data-userid="${user.userId}">FOLLOW-UP</button>
+            ${newTaskBtn}
+            ${recurBtn}
             ${leadsBtn}
             <button class="eqd-btn" id="batchResched">REAGENDAR EM LOTE</button>
 
@@ -2157,6 +2679,8 @@ const USERS = [
           ${segBtn}
           ${followListBtn}
           <button class="eqd-btn" data-action="followUpModal" data-userid="${user.userId}">FOLLOW-UP</button>
+          ${newTaskBtn}
+          ${recurBtn}
           ${leadsBtn}
           <button class="eqd-btn" id="batchResched">REAGENDAR EM LOTE</button>
 
@@ -2215,7 +2739,7 @@ const USERS = [
   }
 
   // =========================
-  // 22) MULTI SELEÇÃO (até 6)
+  // 22) MULTI SELEÇÃO (até 6) + NOVA TAREFA
   // =========================
   let lastMultiSelection = [];
   function openMultiSelect() {
@@ -2251,6 +2775,26 @@ const USERS = [
     };
   }
 
+  function openNewTaskFromMulti(userIds){
+    // escolher user (dentro dos selecionados)
+    openModal("Nova tarefa (Multi Seleção)", `
+      <div style="font-size:12px;font-weight:950;opacity:.85">Selecione a usuária para criar a tarefa:</div>
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px">
+        ${userIds.map((uid) => {
+          const u = USERS.find((x) => String(x.userId) === String(uid)) || { userId: uid, name: `User ${uid}` };
+          return `
+            <button class="eqd-btn" data-action="newTaskModal" data-userid="${u.userId}" style="justify-content:center;background:#1b1e24;border-color:#1b1e24">
+              ${escHtml(u.name)}
+            </button>
+          `;
+        }).join("")}
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+        <button class="eqd-btn" data-action="modalClose">Cancelar</button>
+      </div>
+    `, { wide: true });
+  }
+
   function renderMultiColumns(userIds) {
     const cols = userIds.length;
     const ds = dayStart(selectedDate).getTime();
@@ -2258,6 +2802,7 @@ const USERS = [
       <div class="panelHead">
         <div style="font-weight:950">PAINEL MULTI • Dia ${fmtDateOnly(selectedDate)}</div>
         <div class="panelTools">
+          <button class="eqd-btn eqd-btnPrimary" data-action="newTaskMulti">NOVA TAREFA</button>
           <button class="eqd-btn" data-action="backGeneral">VOLTAR</button>
         </div>
       </div>
@@ -2638,6 +3183,57 @@ const USERS = [
       return renderGeneral();
     }
 
+    if (act === "newTaskMulti") {
+      if (!currentView.multi || !currentView.multi.length) return;
+      return openNewTaskFromMulti(currentView.multi.slice());
+    }
+
+    if (act === "newTaskModal") {
+      const user = USERS.find((u) => Number(u.userId) === Number(uid));
+      if (!user) return;
+      closeModal(); // se veio do seletor do multi, fecha primeiro
+      return openNewTaskModalForUser(user, null);
+    }
+
+    if (act === "recurManager") {
+      const user = USERS.find((u) => Number(u.userId) === Number(uid));
+      if (!user) return;
+      return openRecurrenceManagerModalForUser(user);
+    }
+
+    if (act === "recurDelete") {
+      const ruleId = String(a.getAttribute("data-ruleid") || "").trim();
+      if (!ruleId) return;
+      const user = USERS.find((u) => Number(u.userId) === Number(uid));
+      if (!user) return;
+
+      const ok = confirm("Excluir esta regra de recorrência? (não apaga tarefas já criadas)");
+      if (!ok) return;
+
+      const lk = `recurDel:${uid}:${ruleId}`;
+      if (!lockTry(lk)) return;
+
+      (async () => {
+        try {
+          setBusy("Excluindo regra…");
+          await loadRecurrenceConfigDeals();
+          await deleteRuleForUser(uid, ruleId);
+          clearBusy();
+          closeModal();
+          // atualiza
+          await refreshData(true);
+          renderCurrentView();
+          openRecurrenceManagerModalForUser(user);
+        } catch (e) {
+          clearBusy();
+          alert("Falha: " + (e.message || e));
+        } finally {
+          lockRelease(lk);
+        }
+      })();
+      return;
+    }
+
     if (act === "followUpModal") {
       const user = USERS.find((u) => Number(u.userId) === Number(uid));
       if (!user) return;
@@ -2808,7 +3404,13 @@ const USERS = [
         await loadStagesForCategory(CATEGORY_MAIN);
         STATE.bootstrapLoaded = true;
       }
+
       await loadDeals();
+
+      // ✅ carregar regras e gerar instâncias (cross-PC)
+      await loadRecurrenceConfigDeals().catch(() => {});
+      await generateRecurringDealsWindow().catch(() => {});
+
       setSoftStatus("JS: ok");
     } catch (e) {
       STATE.offline = true;
