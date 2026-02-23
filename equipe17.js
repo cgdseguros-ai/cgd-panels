@@ -1,4 +1,3 @@
-
 /* eqd.js — GET • CGD CORRETORA (v5.0)
 ✅ Objetivo deste build:
 -	Deixar CLARO onde está o “SALVAR” (marcadores: // ✅ SALVAR AQUI)
