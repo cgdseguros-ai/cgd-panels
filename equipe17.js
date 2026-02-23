@@ -18,7 +18,7 @@
 
   const INTRANET_URL = "https://cgdcorretora.bitrix24.site/";
   const VENDAS_URL = "https://cgdcorretorabase.bitrix24.site/vendas/";
-  const FINANCEIRO_URL = "https://cgdcorretorabase.bitrix24.site/financeiro1997";
+  const FINANCEIRO_URL = "https://cgdcorretorabase.bitrix24.site/controlefinanceiro/";
   const SEGUROS_URL = "https://getcgdcorretora.bitrix24.site/seguros/";
 
   const REFRESH_MS = 20000;
