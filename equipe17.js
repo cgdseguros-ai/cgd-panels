@@ -1149,7 +1149,7 @@
             [UF_PRAZO]: iso,
           };
 
-          // ✅ IMPORTANTE: agora aplica os UFs da regra na instância (isso faltava)
+          // ✅ IMPORTANTE: agora aplica os UFs da regra na instância
           if (rule.etapaUf) fields[UF_ETAPA] = String(rule.etapaUf);
           if (rule.tipo) fields[UF_TAREFA] = String(rule.tipo);
           if (rule.urg) fields[UF_URGENCIA] = String(rule.urg);
@@ -2877,7 +2877,7 @@
   }
 
   // =========================
-  // 23) AÇÕES: concluir / editar / excluir / leads move / etc.
+  // 23) AÇÕES: concluir / editar / excluir / leads move / recorrência manager
   // =========================
   async function refreshData(forceNetwork) {
     if (!STATE.doneStageId) await loadStagesForCategory(CATEGORY_MAIN);
@@ -2902,117 +2902,71 @@
     renderGeneral();
   }
 
+  function getDealById(id){
+    id = String(id);
+    return (STATE.dealsAll || []).find(d => String(d.ID) === id) || null;
+  }
+
   async function markDone(dealId) {
     if (!STATE.doneStageId) throw new Error("Etapa CONCLUÍDO não encontrada.");
     setBusy("Concluindo…");
+
     // ✅ SALVAR AQUI (move para concluído)
     await bx("crm.deal.update", { id: String(dealId), fields: { STAGE_ID: String(STATE.doneStageId) } });
+
+    // remover do open local (pra UI reagir rápido)
+    STATE.dealsOpen = (STATE.dealsOpen || []).filter(d => String(d.ID) !== String(dealId));
     updateDealInState(dealId, { STAGE_ID: String(STATE.doneStageId) });
+
     clearBusy();
   }
 
-  async function deleteDeal(dealId) {
-    setBusy("Excluindo…");
-    // ✅ SALVAR AQUI (exclui)
-    await bx("crm.deal.delete", { id: String(dealId) });
-    STATE.dealsAll = (STATE.dealsAll || []).filter((d)=>String(d.ID)!==String(dealId));
-    STATE.dealsOpen = (STATE.dealsOpen || []).filter((d)=>String(d.ID)!==String(dealId));
-    clearBusy();
-  }
+  function openDoneMenu(dealId){
+    const d = getDealById(dealId);
+    if (!d) return;
 
-  function openDoneMenu(dealId) {
-    openModal("Concluir", `
-      <div class="eqd-warn" id="dnWarn"></div>
+    openModal("Concluir tarefa", `
+      <div class="eqd-warn" id="dmWarn"></div>
+      <div style="font-size:12px;font-weight:950;opacity:.85;margin-bottom:10px">${escHtml(bestTitleFromText(d.TITLE || ""))}</div>
+
       <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end">
         <button class="eqd-btn" data-action="modalClose">Cancelar</button>
-        <button class="eqd-btn eqd-btnPrimary" id="dnSave">SALVAR (CONCLUIR)</button>
+        <button class="eqd-btn eqd-btnPrimary" id="dmOk">CONCLUIR</button>
       </div>
     `);
 
-    const warn = document.getElementById("dnWarn");
-    const btn = document.getElementById("dnSave");
-    btn.onclick = async () => {
+    const warn = document.getElementById("dmWarn");
+    document.getElementById("dmOk").onclick = async () => {
       const lk = `done:${dealId}`;
       if (!lockTry(lk)) return;
-      try {
-        btn.disabled = true;
+      try{
         warn.style.display = "none";
         await markDone(dealId);
         closeModal();
         await refreshData(true);
         renderCurrentView();
-      } catch (e) {
+      }catch(e){
         warn.style.display = "block";
         warn.textContent = "Falha:\n" + (e.message || e);
-      } finally {
-        btn.disabled = false;
+      }finally{
         lockRelease(lk);
       }
     };
   }
 
-  function openEditPrazo(dealId) {
-    const d = (STATE.dealsAll || []).find(x=>String(x.ID)===String(dealId));
-    const dt = d && d._prazo ? new Date(d._prazo) : new Date();
-    dt.setMinutes(dt.getMinutes() + 60);
-    const localDefault = new Date(dt.getTime() - dt.getTimezoneOffset()*60000).toISOString().slice(0,16);
-
-    openModal("Editar prazo", `
-      <div class="eqd-warn" id="epWarn"></div>
-      <div style="display:grid;grid-template-columns:1fr;gap:10px">
-        <input id="epPrazo" type="datetime-local" value="${localDefault}"
-               style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" />
-        <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
-          <button class="eqd-btn" data-action="modalClose">Cancelar</button>
-          <button class="eqd-btn eqd-btnPrimary" id="epSave">SALVAR PRAZO</button>
-        </div>
-      </div>
-    `);
-
-    const warn = document.getElementById("epWarn");
-    const btn = document.getElementById("epSave");
-    btn.onclick = async () => {
-      const lk = `prazo:${dealId}`;
-      if (!lockTry(lk)) return;
-      try {
-        btn.disabled = true;
-        warn.style.display = "none";
-        const prazoLocal = String(document.getElementById("epPrazo").value||"").trim();
-        const prazoIso = localInputToIsoWithOffset(prazoLocal);
-        if (!prazoIso) throw new Error("Prazo inválido.");
-
-        setBusy("Salvando prazo…");
-        // ✅ SALVAR AQUI
-        await bx("crm.deal.update", { id: String(dealId), fields: { [UF_PRAZO]: prazoIso } });
-        updateDealInState(dealId, { [UF_PRAZO]: prazoIso, _prazo: new Date(prazoIso).toISOString() });
-        clearBusy();
-
-        closeModal();
-        await refreshData(true);
-        renderCurrentView();
-      } catch (e) {
-        clearBusy();
-        warn.style.display = "block";
-        warn.textContent = "Falha:\n" + (e.message || e);
-      } finally {
-        btn.disabled = false;
-        lockRelease(lk);
-      }
-    };
-  }
-
-  function openEditTitle(dealId) {
-    const d = (STATE.dealsAll || []).find(x=>String(x.ID)===String(dealId));
-    const cur = d ? String(d.TITLE||"") : "";
+  function openEditTitleModal(dealId){
+    const d = getDealById(dealId);
+    if (!d) return;
 
     openModal("Editar negócio", `
       <div class="eqd-warn" id="etWarn"></div>
-      <div style="display:grid;grid-template-columns:1fr;gap:10px">
-        <input id="etTitle" value="${escHtml(cur)}"
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="font-size:11px;font-weight:900;margin-bottom:2px">TÍTULO</div>
+        <input id="etVal" value="${escHtml(String(d.TITLE||""))}"
                style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" />
         <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
           <button class="eqd-btn" data-action="modalClose">Cancelar</button>
-          <button class="eqd-btn eqd-btnPrimary" id="etSave">SALVAR TÍTULO</button>
+          <button class="eqd-btn eqd-btnPrimary" id="etSave">SALVAR</button>
         </div>
       </div>
     `);
@@ -3020,434 +2974,545 @@
     const warn = document.getElementById("etWarn");
     const btn = document.getElementById("etSave");
     btn.onclick = async () => {
-      const lk = `title:${dealId}`;
+      const lk = `editTitle:${dealId}`;
       if (!lockTry(lk)) return;
-      try {
+      try{
         btn.disabled = true;
         warn.style.display = "none";
-        const title = String(document.getElementById("etTitle").value||"").trim();
-        if (!title) throw new Error("Título vazio.");
+        const val = String(document.getElementById("etVal").value||"").trim();
+        if (!val) throw new Error("Título vazio.");
+        setBusy("Salvando…");
 
-        setBusy("Salvando título…");
         // ✅ SALVAR AQUI
-        await bx("crm.deal.update", { id: String(dealId), fields: { TITLE: title } });
-        updateDealInState(dealId, { TITLE: title });
-        clearBusy();
+        await bx("crm.deal.update", { id: String(dealId), fields: { TITLE: val } });
 
+        updateDealInState(dealId, { TITLE: val });
         closeModal();
         await refreshData(true);
         renderCurrentView();
-      } catch (e) {
-        clearBusy();
+      }catch(e){
         warn.style.display = "block";
         warn.textContent = "Falha:\n" + (e.message || e);
-      } finally {
+      }finally{
         btn.disabled = false;
+        clearBusy();
         lockRelease(lk);
       }
     };
   }
 
-  function openEditObs(dealId) {
-    const d = (STATE.dealsAll || []).find(x=>String(x.ID)===String(dealId));
-    const cur = d ? String(d[UF_OBS] || d._obs || "") : "";
+  function openEditPrazoModal(dealId){
+    const d = getDealById(dealId);
+    if (!d) return;
 
-    openModal("Editar OBS", `
+    const curIso = d[UF_PRAZO] || "";
+    let localDefault = "";
+    try{
+      const dt = curIso ? new Date(curIso) : new Date(Date.now()+60*60000);
+      localDefault = new Date(dt.getTime() - dt.getTimezoneOffset()*60000).toISOString().slice(0,16);
+    }catch(_){}
+
+    openModal("Editar prazo", `
+      <div class="eqd-warn" id="epWarn"></div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="font-size:11px;font-weight:900">PRAZO (data e hora)</div>
+        <input id="epVal" type="datetime-local" value="${escHtml(localDefault)}"
+               style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" />
+        <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+          <button class="eqd-btn" data-action="modalClose">Cancelar</button>
+          <button class="eqd-btn eqd-btnPrimary" id="epSave">SALVAR</button>
+        </div>
+      </div>
+    `);
+
+    const warn = document.getElementById("epWarn");
+    const btn = document.getElementById("epSave");
+    btn.onclick = async () => {
+      const lk = `editPrazo:${dealId}`;
+      if (!lockTry(lk)) return;
+      try{
+        btn.disabled = true;
+        warn.style.display = "none";
+        const local = String(document.getElementById("epVal").value||"").trim();
+        const iso = localInputToIsoWithOffset(local);
+        if (!iso) throw new Error("Prazo inválido.");
+        setBusy("Salvando…");
+
+        // ✅ SALVAR AQUI
+        await bx("crm.deal.update", { id: String(dealId), fields: { [UF_PRAZO]: iso } });
+
+        updateDealInState(dealId, { [UF_PRAZO]: iso, _prazo: new Date(iso).toISOString(), _late: false });
+        closeModal();
+        await refreshData(true);
+        renderCurrentView();
+      }catch(e){
+        warn.style.display = "block";
+        warn.textContent = "Falha:\n" + (e.message || e);
+      }finally{
+        btn.disabled = false;
+        clearBusy();
+        lockRelease(lk);
+      }
+    };
+  }
+
+  async function openEditUrgModal(dealId){
+    const d = getDealById(dealId);
+    if (!d) return;
+
+    const meta = await ensureDealFieldsMeta().catch(()=>null);
+    const items = meta ? getFieldItemsFromMeta(meta, UF_URGENCIA) : [];
+    const opts = items.length ? renderOptions(items, "Selecione a urgência…") : `<option value="">(sem opções)</option>`;
+
+    openModal("Urgência", `
+      <div class="eqd-warn" id="euWarn"></div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="font-size:11px;font-weight:900">URGÊNCIA</div>
+        <select id="euVal" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
+          ${opts}
+        </select>
+        <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+          <button class="eqd-btn" data-action="modalClose">Cancelar</button>
+          <button class="eqd-btn eqd-btnPrimary" id="euSave">SALVAR</button>
+        </div>
+      </div>
+    `);
+
+    const sel = document.getElementById("euVal");
+    if (sel && d[UF_URGENCIA]) sel.value = String(d[UF_URGENCIA]);
+
+    const warn = document.getElementById("euWarn");
+    const btn = document.getElementById("euSave");
+    btn.onclick = async () => {
+      const lk = `editUrg:${dealId}`;
+      if (!lockTry(lk)) return;
+      try{
+        btn.disabled = true;
+        warn.style.display = "none";
+        const v = String(sel.value||"").trim();
+        if (!v) throw new Error("Selecione uma urgência.");
+        setBusy("Salvando…");
+
+        // ✅ SALVAR AQUI
+        await bx("crm.deal.update", { id: String(dealId), fields: { [UF_URGENCIA]: v } });
+
+        updateDealInState(dealId, { [UF_URGENCIA]: v, _urgId: v, _urgTxt: "" });
+        closeModal();
+        await refreshData(true); // recarrega textos _urgTxt
+        renderCurrentView();
+      }catch(e){
+        warn.style.display = "block";
+        warn.textContent = "Falha:\n" + (e.message || e);
+      }finally{
+        btn.disabled = false;
+        clearBusy();
+        lockRelease(lk);
+      }
+    };
+  }
+
+  function openEditObsModal(dealId){
+    const d = getDealById(dealId);
+    if (!d) return;
+
+    openModal("OBS", `
       <div class="eqd-warn" id="eoWarn"></div>
-      <textarea id="eoText" rows="8" style="width:100%;border-radius:14px;border:1px solid rgba(30,40,70,.16);padding:10px;font-weight:900;outline:none">${escHtml(cur)}</textarea>
-      <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
-        <button class="eqd-btn" data-action="modalClose">Cancelar</button>
-        <button class="eqd-btn eqd-btnPrimary" id="eoSave">SALVAR OBS</button>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="font-size:12px;font-weight:950;opacity:.85">${escHtml(bestTitleFromText(d.TITLE||""))}</div>
+        <textarea id="eoVal" rows="7" style="width:100%;border-radius:14px;border:1px solid rgba(30,40,70,.16);padding:10px;font-weight:850;outline:none">${escHtml(String(d[UF_OBS]||""))}</textarea>
+        <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+          <button class="eqd-btn" data-action="modalClose">Cancelar</button>
+          <button class="eqd-btn eqd-btnPrimary" id="eoSave">SALVAR</button>
+        </div>
       </div>
     `);
 
     const warn = document.getElementById("eoWarn");
     const btn = document.getElementById("eoSave");
     btn.onclick = async () => {
-      const lk = `obs:${dealId}`;
+      const lk = `editObs:${dealId}`;
       if (!lockTry(lk)) return;
-      try {
+      try{
         btn.disabled = true;
         warn.style.display = "none";
-        const val = String(document.getElementById("eoText").value||"").trim();
+        const val = String(document.getElementById("eoVal").value||"").trim();
+        setBusy("Salvando…");
 
-        setBusy("Salvando OBS…");
         // ✅ SALVAR AQUI
         await bx("crm.deal.update", { id: String(dealId), fields: { [UF_OBS]: val } });
+
         updateDealInState(dealId, { [UF_OBS]: val, _obs: val, _hasObs: !!val });
-        clearBusy();
-
         closeModal();
         await refreshData(true);
         renderCurrentView();
-      } catch (e) {
-        clearBusy();
+      }catch(e){
         warn.style.display = "block";
         warn.textContent = "Falha:\n" + (e.message || e);
-      } finally {
+      }finally{
         btn.disabled = false;
+        clearBusy();
         lockRelease(lk);
       }
     };
   }
 
-  async function openEditUrg(dealId) {
-    const meta = await ensureDealFieldsMeta();
-    const urgItems = getFieldItemsFromMeta(meta, UF_URGENCIA);
+  async function openChangeColabModal(dealId){
+    const d = getDealById(dealId);
+    if (!d) return;
 
-    const d = (STATE.dealsAll || []).find(x=>String(x.ID)===String(dealId));
-    const cur = d ? String(d[UF_URGENCIA] || d._urgId || "") : "";
+    // tenta enum
+    let isEnum = false;
+    try { isEnum = await enumHasOptions(UF_COLAB); } catch(_){}
 
-    openModal("Urgência", `
-      <div class="eqd-warn" id="euWarn"></div>
-      <select id="euSel" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
-        ${renderOptions(urgItems, "Selecione…")}
-      </select>
-      <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
-        <button class="eqd-btn" data-action="modalClose">Cancelar</button>
-        <button class="eqd-btn eqd-btnPrimary" id="euSave">SALVAR URGÊNCIA</button>
-      </div>
-    `);
+    if (isEnum) {
+      const meta = await ensureDealFieldsMeta().catch(()=>null);
+      const items = meta ? getFieldItemsFromMeta(meta, UF_COLAB) : [];
+      const opts = items.length ? renderOptions(items, "Selecione a colaboradora…") : `<option value="">(sem opções)</option>`;
 
-    const sel = document.getElementById("euSel");
-    if (sel) sel.value = cur;
+      openModal("Trocar COLAB", `
+        <div class="eqd-warn" id="ccWarn"></div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div style="font-size:11px;font-weight:900">COLAB</div>
+          <select id="ccVal" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
+            ${opts}
+          </select>
+          <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+            <button class="eqd-btn" data-action="modalClose">Cancelar</button>
+            <button class="eqd-btn eqd-btnPrimary" id="ccSave">SALVAR</button>
+          </div>
+        </div>
+      `);
 
-    const warn = document.getElementById("euWarn");
-    const btn = document.getElementById("euSave");
-    btn.onclick = async () => {
-      const lk = `urg:${dealId}`;
-      if (!lockTry(lk)) return;
-      try {
-        btn.disabled = true;
-        warn.style.display = "none";
-        const v = String(sel.value||"").trim();
+      const sel = document.getElementById("ccVal");
+      if (sel && d[UF_COLAB]) sel.value = String(d[UF_COLAB]);
 
-        setBusy("Salvando urgência…");
-        // ✅ SALVAR AQUI
-        await bx("crm.deal.update", { id: String(dealId), fields: { [UF_URGENCIA]: v } });
-        updateDealInState(dealId, { [UF_URGENCIA]: v, _urgId: v });
-        clearBusy();
+      const warn = document.getElementById("ccWarn");
+      const btn = document.getElementById("ccSave");
+      btn.onclick = async () => {
+        const lk = `colabEnum:${dealId}`;
+        if (!lockTry(lk)) return;
+        try{
+          btn.disabled = true;
+          warn.style.display = "none";
+          const v = String(sel.value||"").trim();
+          if (!v) throw new Error("Selecione uma colaboradora.");
+          setBusy("Salvando…");
 
-        closeModal();
-        await refreshData(true);
-        renderCurrentView();
-      } catch (e) {
-        clearBusy();
-        warn.style.display = "block";
-        warn.textContent = "Falha:\n" + (e.message || e);
-      } finally {
-        btn.disabled = false;
-        lockRelease(lk);
-      }
-    };
-  }
+          // ✅ SALVAR AQUI
+          await bx("crm.deal.update", { id: String(dealId), fields: { [UF_COLAB]: v } });
 
-  function openChangeColab(dealId) {
-    const d = (STATE.dealsAll || []).find(x=>String(x.ID)===String(dealId));
-    const cur = d ? String(d[UF_COLAB] || d._colabTxt || "") : "";
+          updateDealInState(dealId, { [UF_COLAB]: v, _colabId: v, _colabTxt: "" });
+          closeModal();
+          await refreshData(true);
+          renderCurrentView();
+        }catch(e){
+          warn.style.display = "block";
+          warn.textContent = "Falha:\n" + (e.message || e);
+        }finally{
+          btn.disabled = false;
+          clearBusy();
+          lockRelease(lk);
+        }
+      };
+      return;
+    }
 
-    openModal("Trocar colaboradora", `
+    // texto livre
+    openModal("Trocar COLAB", `
       <div class="eqd-warn" id="ccWarn"></div>
-      <input id="ccVal" value="${escHtml(cur)}" placeholder="Texto livre"
-             style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" />
-      <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
-        <button class="eqd-btn" data-action="modalClose">Cancelar</button>
-        <button class="eqd-btn eqd-btnPrimary" id="ccSave">SALVAR COLAB</button>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="font-size:11px;font-weight:900">COLAB (texto)</div>
+        <input id="ccTxt" value="${escHtml(String(d[UF_COLAB]||""))}"
+               style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" />
+        <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+          <button class="eqd-btn" data-action="modalClose">Cancelar</button>
+          <button class="eqd-btn eqd-btnPrimary" id="ccSave">SALVAR</button>
+        </div>
       </div>
     `);
 
     const warn = document.getElementById("ccWarn");
     const btn = document.getElementById("ccSave");
     btn.onclick = async () => {
-      const lk = `colab:${dealId}`;
+      const lk = `colabTxt:${dealId}`;
       if (!lockTry(lk)) return;
-      try {
+      try{
         btn.disabled = true;
         warn.style.display = "none";
-        const v = String(document.getElementById("ccVal").value||"").trim();
+        const v = String(document.getElementById("ccTxt").value||"").trim();
+        setBusy("Salvando…");
 
-        setBusy("Salvando colab…");
         // ✅ SALVAR AQUI
         await bx("crm.deal.update", { id: String(dealId), fields: { [UF_COLAB]: v } });
-        updateDealInState(dealId, { [UF_COLAB]: v, _colabTxt: v, _colabId: v });
-        clearBusy();
 
+        updateDealInState(dealId, { [UF_COLAB]: v, _colabId: v, _colabTxt: v });
         closeModal();
         await refreshData(true);
         renderCurrentView();
-      } catch (e) {
-        clearBusy();
+      }catch(e){
         warn.style.display = "block";
         warn.textContent = "Falha:\n" + (e.message || e);
-      } finally {
+      }finally{
         btn.disabled = false;
+        clearBusy();
         lockRelease(lk);
       }
     };
   }
 
-  async function leadMove(userId, leadId, toStatus) {
-    if (!toStatus) return;
-    setBusy("Movendo lead…");
-    // ✅ SALVAR AQUI (move lead)
-    await bx("crm.lead.update", { id: String(leadId), fields: { STATUS_ID: String(toStatus) } });
-    await loadLeadsForOneUser(userId);
+  async function deleteDeal(dealId){
+    if (!confirm("Excluir este item?")) return;
+    setBusy("Excluindo…");
+
+    // ✅ SALVAR AQUI (delete)
+    await bx("crm.deal.delete", { id: String(dealId) });
+
+    STATE.dealsAll = (STATE.dealsAll || []).filter(d => String(d.ID) !== String(dealId));
+    STATE.dealsOpen = (STATE.dealsOpen || []).filter(d => String(d.ID) !== String(dealId));
     clearBusy();
   }
 
-  // =========================
-  // 24) RECORRÊNCIA MANAGER (listar / deletar regras)
-  // =========================
-  async function openRecurrenceManager(userId) {
-    const user = USERS.find(u=>String(u.userId)===String(userId));
+  async function moveLeadStage(userId, leadId, toStatus){
+    setBusy("Movendo lead…");
+
+    // ✅ SALVAR AQUI
+    await bx("crm.lead.update", { id: String(leadId), fields: { STATUS_ID: String(toStatus) } });
+
+    await loadLeadsForOneUser(userId);
+    clearBusy();
+    reopenLeadsModalSafe();
+  }
+
+  function openRecurrenceManager(userId){
+    const uid = String(userId);
+    const user = USERS.find(u => String(u.userId) === uid);
     if (!user) return;
 
-    if (!STATE.recurRulesByUser || STATE.recurRulesByUser.size === 0) {
-      await loadRecurrenceConfigDeals();
-    }
-    const rules = (STATE.recurRulesByUser.get(String(userId)) || []).slice();
-
-    const pretty = (r) => {
+    const rules = STATE.recurRulesByUser.get(uid) || [];
+    const ruleLine = (r) => {
       const t = String(r.type||"");
-      if (t === "DAILY_BUSINESS") return `Diária (dias úteis) • ${String(r.hh).padStart(2,"0")}:${String(r.mm).padStart(2,"0")}`;
-      if (t === "WEEKLY") return `Semanal (${(r.weekDays||[]).map(dowNamePt).join(", ")}) • ${String(r.hh).padStart(2,"0")}:${String(r.mm).padStart(2,"0")}`;
-      if (t === "MONTHLY") return `Mensal (dia ${r.monthDay}) • ${String(r.hh).padStart(2,"0")}:${String(r.mm).padStart(2,"0")}`;
-      if (t === "YEARLY") return `Anual (${r.yearMD}) • ${String(r.hh).padStart(2,"0")}:${String(r.mm).padStart(2,"0")}`;
-      return t || "—";
+      let when = "";
+      if (t === "DAILY_BUSINESS") when = "Diária (dias úteis)";
+      if (t === "WEEKLY") when = "Semanal: " + (Array.isArray(r.weekDays)? r.weekDays.map(dowNamePt).join(", ") : "—");
+      if (t === "MONTHLY") when = "Mensal: dia " + String(r.monthDay||"—");
+      if (t === "YEARLY") when = "Anual: " + String(r.yearMD||"—");
+      const hh = String(r.hh??9).padStart(2,"0");
+      const mm = String(r.mm??0).padStart(2,"0");
+      return `
+        <div style="border:1px solid rgba(0,0,0,.12);border-radius:14px;padding:10px;background:rgba(255,255,255,.62);display:flex;gap:10px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap">
+          <div style="min-width:280px">
+            <div style="font-weight:950">${escHtml(r.title||"")}</div>
+            <div style="font-size:11px;font-weight:900;opacity:.78;margin-top:4px">${escHtml(when)} • ${hh}:${mm}</div>
+            <div style="font-size:11px;font-weight:900;opacity:.72;margin-top:4px">
+              ${r.etapaUf ? `ETAPA UF: ${escHtml(r.etapaUf)} • ` : ``}
+              ${r.tipo ? `TIPO: ${escHtml(r.tipo)} • ` : ``}
+              ${r.urg ? `URG: ${escHtml(r.urg)} • ` : ``}
+              ${r.colab ? `COLAB: ${escHtml(r.colab)}` : ``}
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="eqd-btn eqd-btnDanger" data-action="recurDelete" data-userid="${uid}" data-ruleid="${escHtml(String(r.id||""))}">Excluir regra</button>
+          </div>
+        </div>
+      `;
     };
 
     openModal(`Recorrência — ${user.name}`, `
       <div class="eqd-warn" id="rmWarn"></div>
-      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
-        <div style="font-size:12px;font-weight:950;opacity:.85">Regras: <strong>${rules.length}</strong></div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
-          <button class="eqd-btn eqd-btnPrimary" data-action="newTaskModal" data-userid="${user.userId}">+ NOVA REGRA/TAREFA</button>
-          <button class="eqd-btn" data-action="modalClose">Fechar</button>
-        </div>
+      <div style="font-size:12px;font-weight:950;opacity:.85">Regras: <strong>${rules.length}</strong></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:8px">
+        <button class="eqd-btn" data-action="modalClose">Fechar</button>
+        <button class="eqd-btn eqd-btnPrimary" data-action="newTaskModal" data-userid="${uid}">+ Nova recorrência</button>
       </div>
       <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">
-        ${rules.length ? rules.map((r)=>`
-          <div class="leadCard" style="gap:8px">
-            <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
-              <div style="font-weight:950">${escHtml(r.title||"")}</div>
-              <button class="leadBtn leadBtnD" data-action="recurDelete" data-userid="${user.userId}" data-ruleid="${escHtml(String(r.id||""))}">EXCLUIR</button>
-            </div>
-            <div class="leadMeta">
-              <span>Tipo: <strong>${escHtml(pretty(r))}</strong></span>
-              ${r.etapaUf ? `<span>Etapa: <strong>${escHtml(String(r.etapaUf))}</strong></span>` : ``}
-              ${r.tipo ? `<span>Tipo UF: <strong>${escHtml(String(r.tipo))}</strong></span>` : ``}
-              ${r.urg ? `<span>Urg UF: <strong>${escHtml(String(r.urg))}</strong></span>` : ``}
-              ${r.colab ? `<span>Colab: <strong>${escHtml(String(r.colab))}</strong></span>` : ``}
-            </div>
-          </div>
-        `).join("") : `<div class="eqd-empty">Nenhuma regra.</div>`}
+        ${rules.length ? rules.map(ruleLine).join("") : `<div class="eqd-empty">Sem regras cadastradas.</div>`}
       </div>
-    `, { wide:true });
-
-    const warn = document.getElementById("rmWarn");
-    const host = el.modalBody;
-
-    host.onclick = async (e) => {
-      const b = e.target.closest("[data-action='recurDelete']");
-      if (!b) return;
-      const rid = String(b.getAttribute("data-ruleid")||"").trim();
-      const uid = String(b.getAttribute("data-userid")||"").trim();
-      if (!rid || !uid) return;
-
-      if (!confirm("Excluir esta regra de recorrência?")) return;
-
-      const lk = `recurDel:${uid}:${rid}`;
-      if (!lockTry(lk)) return;
-      try {
-        setBusy("Excluindo regra…");
-        // ✅ SALVAR AQUI (remove regra no JSON de recorrência)
-        await deleteRuleForUser(uid, rid);
-        clearBusy();
-        closeModal();
-        await refreshData(true);
-        renderCurrentView();
-      } catch (err) {
-        clearBusy();
-        warn.style.display = "block";
-        warn.textContent = "Falha:\n" + (err.message || err);
-      } finally {
-        lockRelease(lk);
-      }
-    };
+    `, { wide: true });
   }
 
   // =========================
-  // 25) EVENT DELEGATION (tudo por data-action)
+  // 24) EVENT DELEGATION (cliques)
   // =========================
   document.addEventListener("click", async (e) => {
     const a = e.target.closest("[data-action]");
     if (!a) return;
+
     const act = a.getAttribute("data-action");
+    const id = a.getAttribute("data-id");
+    const userId = a.getAttribute("data-userid");
 
-    if (act === "modalClose") return closeModal();
+    try{
+      if (act === "modalClose") return closeModal();
 
-    if (act === "openUser") {
-      const uid = a.getAttribute("data-userid");
-      if (!canOpenUserPanel(uid)) return;
-      pushView(currentView);
-      currentView = { kind:"user", userId: Number(uid), multi:null };
-      return renderCurrentView();
-    }
+      if (act === "openUser") {
+        const uid = String(a.getAttribute("data-userid") || "");
+        if (!uid) return;
+        if (!canOpenUserPanel(uid)) return;
+        pushView(currentView);
+        currentView = { kind: "user", userId: Number(uid), multi: null };
+        return renderCurrentView();
+      }
 
-    if (act === "backToPrevious") {
-      currentView = popView();
-      return renderCurrentView();
-    }
+      if (act === "openUserFromMulti") {
+        const uid = String(a.getAttribute("data-userid") || "");
+        if (!uid) return;
+        if (!canOpenUserPanel(uid)) return;
+        pushView(currentView);
+        currentView = { kind: "user", userId: Number(uid), multi: null };
+        return renderCurrentView();
+      }
 
-    if (act === "openUserFromMulti") {
-      const uid = a.getAttribute("data-userid");
-      if (!canOpenUserPanel(uid)) return;
-      pushView(currentView);
-      currentView = { kind:"user", userId: Number(uid), multi:null };
-      return renderCurrentView();
-    }
+      if (act === "backToPrevious") {
+        currentView = popView();
+        return renderCurrentView();
+      }
 
-    if (act === "leadsModal") {
-      const uid = a.getAttribute("data-userid");
-      return openLeadsModalForUser(uid, "");
-    }
+      if (act === "newTaskModal") {
+        const u = USERS.find(x => String(x.userId) === String(userId));
+        if (!u) return;
+        return openNewTaskModalForUser(u, {});
+      }
 
-    if (act === "followUpModal") {
-      const uid = a.getAttribute("data-userid");
-      const user = USERS.find(u=>String(u.userId)===String(uid));
-      if (!user) return;
-      return openFollowUpModal(user, "");
-    }
+      if (act === "newTaskMulti") {
+        if (currentView.kind !== "multi") return;
+        return openNewTaskFromMulti(currentView.multi || []);
+      }
 
-    if (act === "followList") {
-      const uid = a.getAttribute("data-userid");
-      const user = USERS.find(u=>String(u.userId)===String(uid));
-      if (!user) return;
-      return openFollowupListModalForUser(user);
-    }
+      if (act === "followUpModal") {
+        const u = USERS.find(x => String(x.userId) === String(userId));
+        if (!u) return;
+        return openFollowUpModal(u, "", {});
+      }
 
-    if (act === "newTaskModal") {
-      const uid = a.getAttribute("data-userid");
-      const user = USERS.find(u=>String(u.userId)===String(uid));
-      if (!user) return;
-      return openNewTaskModalForUser(user);
-    }
+      if (act === "followList") {
+        const u = USERS.find(x => String(x.userId) === String(userId));
+        if (!u) return;
+        return openFollowupListModalForUser(u);
+      }
 
-    if (act === "recurManager") {
-      const uid = a.getAttribute("data-userid");
-      return openRecurrenceManager(uid);
-    }
+      if (act === "leadsModal") {
+        const uid = String(userId||"");
+        if (!uid) return;
+        return openLeadsModalForUser(uid, "");
+      }
 
-    if (act === "newTaskMulti") {
-      if (currentView.kind !== "multi") return;
-      return openNewTaskFromMulti(currentView.multi || []);
-    }
+      if (act === "leadObsModal") {
+        const uid = String(a.getAttribute("data-userid")||"");
+        const leadId = String(a.getAttribute("data-leadid")||"");
+        if (!uid || !leadId) return;
+        return openLeadObsModal(uid, leadId);
+      }
 
-    if (act === "leadObsModal") {
-      const uid = a.getAttribute("data-userid");
-      const lid = a.getAttribute("data-leadid");
-      return openLeadObsModal(uid, lid);
-    }
+      if (act === "leadMove") {
+        const uid = String(a.getAttribute("data-userid")||"");
+        const leadId = String(a.getAttribute("data-leadid")||"");
+        const to = String(a.getAttribute("data-tostatus")||"");
+        if (!uid || !leadId || !to) return;
+        return moveLeadStage(uid, leadId, to);
+      }
 
-    if (act === "leadNewManual") {
-      const uid = a.getAttribute("data-userid");
-      const def = a.getAttribute("data-defaultstatus") || "";
-      const user = USERS.find(u=>String(u.userId)===String(uid));
-      if (!user) return;
-      return openManualLeadCreateModal(user, def);
-    }
+      if (act === "leadFollowupModal") {
+        const uid = String(a.getAttribute("data-userid")||"");
+        const leadId = String(a.getAttribute("data-leadid")||"");
+        if (!uid || !leadId) return;
 
-    if (act === "leadMove") {
-      const uid = a.getAttribute("data-userid");
-      const lid = a.getAttribute("data-leadid");
-      const to = a.getAttribute("data-tostatus");
-      await leadMove(uid, lid, to);
-      return reopenLeadsModalSafe();
-    }
+        const u = USERS.find(x => String(x.userId) === uid);
+        if (!u) return;
 
-    if (act === "leadFollowupModal") {
-      const uid = a.getAttribute("data-userid");
-      const lid = a.getAttribute("data-leadid");
-      const user = USERS.find(u=>String(u.userId)===String(uid));
-      if (!user) return;
+        const leads = STATE.leadsByUser.get(uid) || [];
+        const lead = leads.find(l => String(l.ID) === String(leadId));
+        const nm = lead ? leadTitle(lead) : "";
 
-      // tenta prefill do nome
-      const leads = STATE.leadsByUser.get(String(uid)) || [];
-      const lead = leads.find(l=>String(l.ID)===String(lid));
-      const prefill = lead ? leadTitle(lead) : "";
-      return openFollowUpModal(user, prefill, { returnToLeads: { userId: uid, kw: LAST_LEADS_CTX.kw || "" } });
-    }
+        return openFollowUpModal(u, nm, { returnToLeads: { userId: uid, kw: LAST_LEADS_CTX.kw || "" } });
+      }
 
-    // deal actions
-    if (act === "doneMenu") {
-      const id = a.getAttribute("data-id");
-      return openDoneMenu(id);
-    }
-    if (act === "editPrazo") {
-      const id = a.getAttribute("data-id");
-      return openEditPrazo(id);
-    }
-    if (act === "editTitle") {
-      const id = a.getAttribute("data-id");
-      return openEditTitle(id);
-    }
-    if (act === "editUrg") {
-      const id = a.getAttribute("data-id");
-      return openEditUrg(id);
-    }
-    if (act === "editObs") {
-      const id = a.getAttribute("data-id");
-      return openEditObs(id);
-    }
-    if (act === "changeColab") {
-      const id = a.getAttribute("data-id");
-      return openChangeColab(id);
-    }
-    if (act === "delete") {
-      const id = a.getAttribute("data-id");
-      if (!confirm("Excluir este negócio?")) return;
-      const lk = `del:${id}`;
-      if (!lockTry(lk)) return;
-      try {
+      if (act === "leadNewManual") {
+        const uid = String(a.getAttribute("data-userid")||"");
+        const def = String(a.getAttribute("data-defaultstatus")||"");
+        const u = USERS.find(x => String(x.userId) === uid);
+        if (!u) return;
+        return openManualLeadCreateModal(u, def);
+      }
+
+      if (act === "recurManager") {
+        const uid = String(userId||"");
+        if (!uid) return;
+        if (!STATE.recurRulesByUser || STATE.recurRulesByUser.size === 0) await loadRecurrenceConfigDeals().catch(()=>{});
+        return openRecurrenceManager(uid);
+      }
+
+      if (act === "recurDelete") {
+        const uid = String(a.getAttribute("data-userid")||"");
+        const rid = String(a.getAttribute("data-ruleid")||"");
+        if (!uid || !rid) return;
+        if (!confirm("Excluir esta regra de recorrência?")) return;
+        setBusy("Excluindo regra…");
+
+        // ✅ SALVAR AQUI
+        await deleteRuleForUser(uid, rid);
+
+        clearBusy();
+        closeModal();
+        await refreshData(true);
+        return openRecurrenceManager(uid);
+      }
+
+      // Cards actions
+      if (act === "doneMenu") return openDoneMenu(id);
+      if (act === "editPrazo") return openEditPrazoModal(id);
+      if (act === "editTitle") return openEditTitleModal(id);
+      if (act === "editObs") return openEditObsModal(id);
+      if (act === "editUrg") return openEditUrgModal(id);
+      if (act === "changeColab") return openChangeColabModal(id);
+
+      if (act === "delete") {
         await deleteDeal(id);
         await refreshData(true);
-        renderCurrentView();
-      } finally {
-        lockRelease(lk);
+        return renderCurrentView();
       }
-      return;
+
+      // Calendário actions dentro do modal
+      if (act === "calPrev" || act === "calNext" || act === "calToday" || act === "calPick") {
+        // handlers do calendário estão presos no host; aqui só evita conflitos
+        return;
+      }
+    }catch(err){
+      alert("Falha: " + (err && (err.message||err) || err));
+      try{ clearBusy(); }catch(_){}
     }
   });
 
   // =========================
-  // 26) TOPBAR BUTTONS
+  // 25) TOPBAR ACTIONS
   // =========================
-  el.calendar.addEventListener("click", openCalendarModal);
-
-  el.today.addEventListener("click", () => {
+  el.today.onclick = () => {
     selectedDate = new Date();
+    calendarCursor = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
     renderCurrentView();
-  });
-
-  el.multi.addEventListener("click", openMultiSelect);
-
-  el.refresh.addEventListener("click", async () => {
+  };
+  el.calendar.onclick = openCalendarModal;
+  el.multi.onclick = openMultiSelect;
+  el.refresh.onclick = async () => {
     await refreshData(true);
     renderCurrentView();
-  });
+  };
 
   // =========================
-  // 27) BOOT
+  // 26) INIT + AUTO REFRESH
   // =========================
-  (async function boot() {
-    await loadStagesForCategory(CATEGORY_MAIN);
-    loadCache();
-    await refreshData(true);
+  (async function init(){
+    await refreshData(false);
+    renderFooterPeople();
     renderGeneral();
-    setInterval(async () => {
-      await refreshData(true);
-      renderCurrentView();
-    }, REFRESH_MS);
+    setSoftStatus("JS: ok");
   })();
+
+  setInterval(async () => {
+    try{
+      await refreshData(true);
+      // Se estiver em um painel de user, atualiza pra piscar leads etc.
+      renderCurrentView();
+    }catch(_){}
+  }, REFRESH_MS);
 
 })();
