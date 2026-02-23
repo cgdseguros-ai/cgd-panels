@@ -1,15 +1,11 @@
-/* eqd.js — GET • CGD CORRETORA (ATUALIZAÇÃO v4.2 + AJUSTES)
-   ✅ Ajustes solicitados:
-   1) NOVA TAREFA (no painel individual + no MULTI SELEÇÃO) com recorrência:
-      - diária (dias úteis)
-      - semanal (1+ dias da semana)
-      - mensal (dia do mês)
-      - anual (dia/mês)
-      => Recorrência FUNCIONA em PCs diferentes: salva regras no Bitrix em um Deal na etapa "GET • RECORRÊNCIA"
-         (STATUS_ID: C17:UC_IUQR52) usando o UF de OBS: UF_CRM_691385BE7D33D (JSON).
-      => O painel gera automaticamente as instâncias futuras (janela de 45 dias) sem duplicar (marker [RUID=...]).
-   2) Botão FINANCEIRO da USER 813 aponta para:
-      https://cgdcorretorabase.bitrix24.site/controlefinanceiro/
+/* eqd.js — GET • CGD CORRETORA (v5.0)
+   ✅ Objetivo deste build:
+   - Deixar CLARO onde está o “SALVAR” (marcadores: // ✅ SALVAR AQUI)
+   - Nova Tarefa com Recorrência (salva regras no Bitrix e gera instâncias 45 dias)
+   - Corrigir: instâncias recorrentes agora aplicam ETAPA / TIPO / URGÊNCIA / COLAB também
+   - Painel geral + individual + multi seleção
+   - Leads modal (mover etapa, OBS, follow-up)
+   - Editar / Concluir / Excluir / Reagendar em lote
 */
 
 (function () {
@@ -22,24 +18,21 @@
 
   const INTRANET_URL = "https://cgdcorretora.bitrix24.site/";
   const VENDAS_URL = "https://cgdcorretorabase.bitrix24.site/vendas/";
-  const FINANCEIRO_URL = "https://cgdcorretorabase.bitrix24.site/controlefinanceiro/"; // ✅ AJUSTE 2
+  const FINANCEIRO_URL = "https://cgdcorretorabase.bitrix24.site/controlefinanceiro/";
   const SEGUROS_URL = "https://getcgdcorretora.bitrix24.site/seguros/";
 
   const REFRESH_MS = 20000;
 
   const ADMIN_PINS = new Set(["4455", "8123", "6677", "4627"]);
-
   const CATEGORY_MAIN = 17;
 
   // ✅ RECORRÊNCIA (Bitrix)
   const RECURRENCE_STAGE_ID = "C17:UC_IUQR52"; // GET • RECORRÊNCIA
   const RECURRENCE_TITLE_PREFIX = "RECORRÊNCIA • ";
-  const RECURRENCE_WINDOW_DAYS = 45; // janela de geração de instâncias futuras
+  const RECURRENCE_WINDOW_DAYS = 45;
   const RECURRENCE_MARKER_RE = /\[RUID=([^\]]+)\]/i;
 
-  /* ✅ PATCH ÚNICO: ajuste as equipes para ÔMEGA
-     -> Cole e substitua APENAS o bloco USERS no seu eqd.js por este abaixo.
-  */
+  // USERS
   const USERS = [
     { name: "Manuela", userId: 813, team: "DELTA" },
     { name: "Maria Clara", userId: 841, team: "DELTA" },
@@ -57,7 +50,6 @@
     { name: "Nicolle Belmonte", userId: 3085, team: "BETA" },
     { name: "Anna Clara", userId: 3389, team: "BETA" },
 
-    // ✅ EQUIPE ÔMEGA
     { name: "Gabriel", userId: 815, team: "ÔMEGA" },
     { name: "Amanda", userId: 269, team: "ÔMEGA" },
     { name: "Talita", userId: 29, team: "ÔMEGA" },
@@ -67,13 +59,11 @@
   const LEAD_USERS = new Set(["15", "19", "17", "23", "811", "3081", "3079", "3083", "3085", "3389"]);
   const SEGUROS_USERS = new Set(["815", "269", "29", "3101"]);
 
-  // ✅ Layout especial do painel individual (apenas estes)
   const SPECIAL_PANEL_USERS = new Set([
     "3079", "3083", "3085", "3389",
     "15", "19", "17", "23", "811", "3081",
   ]);
 
-  // ✅ Rodapé: sócios
   const FOOTER_PARTNERS = [
     { userId: 27, label: "Sócio" },
     { userId: 1, label: "Sócio" },
@@ -86,7 +76,7 @@
   const UF_ETAPA = "UF_CRM_1768179977089";
   const UF_COLAB = "UF_CRM_1770327799";
   const UF_PRAZO = "UF_CRM_1768175087";
-  const UF_OBS = "UF_CRM_691385BE7D33D"; // ✅ confirmado
+  const UF_OBS = "UF_CRM_691385BE7D33D";
   const DONE_STAGE_NAME = "CONCLUÍDO";
 
   // LEADS — campos
@@ -191,7 +181,6 @@
     .eqd-searchSelect{border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.10);border-radius:999px;padding:8px 10px;font-size:12px;font-weight:950;outline:none;min-width:170px;color:#fff;}
     .eqd-searchSelect option{color:#111;background:#fff;}
 
-    /* ✅ Modo escuro: fundo cinza escuro no painel principal */
     #eqd-app.eqd-dark{
       --bgA:#1b1f25; --bgB:#171b20; --bgC:#1b1f25;
       --border: rgba(255,255,255,.10);
@@ -203,7 +192,6 @@
         linear-gradient(135deg, #14181d, #1b1f25);
     }
 
-    /* PAINEL GERAL */
     .userGrid{display:grid;grid-template-columns:repeat(4,minmax(220px,1fr));gap:12px;}
     @media (max-width:1200px){.userGrid{grid-template-columns:repeat(2,minmax(220px,1fr));}}
     @media (max-width:720px){.userGrid{grid-template-columns:1fr;}}
@@ -236,7 +224,6 @@
     .userEmoji{font-size:18px;}
     .userLine{font-size:11px;font-weight:950;opacity:.90}
 
-    /* ✅ no escuro, cards do grid com contraste correto (sem ficar bege) */
     #eqd-app.eqd-dark .userCard{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.12);color:#fff;}
     #eqd-app.eqd-dark .userName, #eqd-app.eqd-dark .userTeam, #eqd-app.eqd-dark .userLine{color:#fff;}
     #eqd-app.eqd-dark .userPhoto{background:rgba(255,255,255,.10);border-color:rgba(255,255,255,.12);}
@@ -318,7 +305,6 @@
     .eqd-tagObs{border-color:rgba(255,180,0,.55);background:rgba(255,200,0,.22);font-weight:950;color:rgba(120,70,0,.95);animation:eqdBlinkObs .95s ease-in-out infinite;cursor:pointer;}
     @keyframes eqdBlinkObs{0%,100%{opacity:1}50%{opacity:.35}}
 
-    /* ✅ urgência clicável dentro do card */
     .eqd-tagClickable{cursor:pointer;user-select:none}
     .eqd-tagClickable:hover{filter:saturate(1.1);transform:translateY(-.5px)}
 
@@ -329,7 +315,6 @@
     .eqd-smallBtnDanger{background:rgba(255,70,90,.14);border-color:rgba(255,70,90,.30);}
     .eqd-empty{border:1px dashed rgba(30,40,70,.18);border-radius:16px;padding:12px;background:rgba(255,255,255,.55);color:rgba(18,26,40,.62);font-size:11px;font-weight:800;text-align:center;}
 
-    /* LEADS */
     .leadCard{border:1px solid rgba(30,40,70,.12);border-radius:16px;background:rgba(255,255,255,.80);padding:10px;display:flex;flex-direction:column;gap:6px}
     #eqd-app.eqd-dark .leadCard{background:#f3f1eb;border-color:rgba(0,0,0,.12);color:#111;}
     .leadTitle{font-size:13px;font-weight:950}
@@ -361,7 +346,6 @@
     }
     @keyframes blinkBorderRed{0%,100%{filter:saturate(1)}50%{filter:saturate(1.6)}}
 
-    /* CALENDÁRIO */
     .calWrap{display:flex;flex-direction:column;gap:10px}
     .calHead{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
     .calTitle{font-weight:950}
@@ -383,7 +367,6 @@
     .calCell.today{box-shadow:0 0 0 2px rgba(22,163,74,.35) inset}
     .calCell.sel{box-shadow:0 0 0 2px rgba(120,90,255,.55) inset}
 
-    /* ✅ RODAPÉ */
     .eqd-footer{
       position:fixed;left:0;right:0;bottom:0;
       z-index:9999;
@@ -408,7 +391,6 @@
     .eqd-footerMiniTitle{font-weight:950;color:#fff;opacity:.92}
     .eqd-footerDim{opacity:.72}
 
-    /* ✅ Centro do rodapé */
     .eqd-footerCenter{
       flex: 1 1 auto;
       text-align:center;
@@ -603,11 +585,6 @@
     return `${y}-${m}-${d}T${pad(hh)}:${pad(mm)}:00${sign}${oh}:${om}`;
   }
 
-  function isoFromYMDHM(y, mo1, d, hh, mm) {
-    const dt = new Date(y, mo1 - 1, d, hh || 0, mm || 0, 0, 0);
-    return isoFromDateAndTimeParts(dt, dt.getHours(), dt.getMinutes());
-  }
-
   function isUrgenteText(urgTxt) {
     const u = norm(urgTxt);
     if (!u) return false;
@@ -623,37 +600,6 @@
     if (!t) return "Negócio";
     const first = t.split("\n")[0].trim();
     return trunc(first || "Negócio", 72);
-  }
-  function createdMs(d) {
-    const x = d && d.DATE_CREATE ? new Date(d.DATE_CREATE) : null;
-    const t = x ? x.getTime() : NaN;
-    return Number.isFinite(t) ? t : 0;
-  }
-  function prazoMs(d) {
-    const v = d && d._prazo;
-    if (!v) return Number.POSITIVE_INFINITY;
-    const x = new Date(v);
-    const t = x.getTime();
-    return Number.isFinite(t) ? t : Number.POSITIVE_INFINITY;
-  }
-
-  function sortDeals(deals) {
-    return (deals || [])
-      .slice()
-      .sort((a, b) => {
-        const ua = isUrgenteText(a._urgTxt) ? 0 : 1;
-        const ub = isUrgenteText(b._urgTxt) ? 0 : 1;
-        if (ua !== ub) return ua - ub;
-
-        const la = a._late ? 0 : 1;
-        const lb = b._late ? 0 : 1;
-        if (la !== lb) return la - lb;
-
-        const pa = prazoMs(a), pb = prazoMs(b);
-        if (pa !== pb) return pa - pb;
-
-        return createdMs(a) - createdMs(b);
-      });
   }
 
   function dealAccent(deal) {
@@ -684,7 +630,7 @@
   function lockTry(k){ k=lockKey(k); if(!k) return false; if(ACTION_LOCKS.has(k)) return false; ACTION_LOCKS.add(k); return true; }
   function lockRelease(k){ k=lockKey(k); if(!k) return; ACTION_LOCKS.delete(k); }
 
-  // ✅ contexto do modal LEADS (pra voltar sempre pra ele)
+  // ✅ contexto LEADS (pra voltar)
   const LAST_LEADS_CTX = { userId: "", kw: "" };
   function setLeadsCtx(userId, kw){ LAST_LEADS_CTX.userId = String(userId||""); LAST_LEADS_CTX.kw = String(kw||""); }
   function reopenLeadsModalSafe() {
@@ -713,6 +659,7 @@
     doneStageId: null,
     stageMapByName: new Map(),
     enumCache: new Map(),
+    dealFieldsMeta: null,
 
     userPhotoById: new Map(),
     userNameById: new Map(),
@@ -728,11 +675,10 @@
     leadsAlertUsers: new Set(),
 
     footerPhotosLoaded: false,
-    bootstrapLoaded: false,
 
-    // ✅ recorrência
-    recurConfigDealIdByUser: new Map(), // userId -> dealId
-    recurRulesByUser: new Map(),        // userId -> rules[]
+    // recorrência
+    recurConfigDealIdByUser: new Map(),
+    recurRulesByUser: new Map(),
     recurLastGenAt: 0,
   };
 
@@ -859,7 +805,7 @@
   }
 
   // =========================
-  // 8) LEADS STAGES (lazy load)
+  // 8) LEADS STAGES (lazy)
   // =========================
   async function loadLeadStages() {
     if (STATE.leadStageIdByName && STATE.leadStageIdByName.size) return;
@@ -902,22 +848,8 @@
     await loadLeadStages();
 
     const select = [
-      "ID",
-      "TITLE",
-      "NAME",
-      "LAST_NAME",
-      "STATUS_ID",
-      "ASSIGNED_BY_ID",
-      "DATE_CREATE",
-      "DATE_MODIFY",
-      "SOURCE_ID",
-      LEAD_UF_OPERADORA,
-      LEAD_UF_IDADE,
-      LEAD_UF_TELEFONE,
-      LEAD_UF_BAIRRO,
-      LEAD_UF_FONTE,
-      LEAD_UF_DATAHORA,
-      LEAD_UF_OBS,
+      "ID","TITLE","NAME","LAST_NAME","STATUS_ID","ASSIGNED_BY_ID","DATE_CREATE","DATE_MODIFY","SOURCE_ID",
+      LEAD_UF_OPERADORA, LEAD_UF_IDADE, LEAD_UF_TELEFONE, LEAD_UF_BAIRRO, LEAD_UF_FONTE, LEAD_UF_DATAHORA, LEAD_UF_OBS,
     ].filter(Boolean);
 
     const since = new Date(Date.now() - 1000 * 60 * 60 * 24 * 10).toISOString();
@@ -972,10 +904,7 @@
   const CACHE_KEY = "EQD_CACHE_V5";
   function saveCache() {
     try {
-      localStorage.setItem(
-        CACHE_KEY,
-        JSON.stringify({ at: Date.now(), dealsAll: STATE.dealsAll })
-      );
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), dealsAll: STATE.dealsAll }));
     } catch (_) {}
   }
   function loadCache() {
@@ -1032,27 +961,23 @@
   }
 
   // =========================
-  // 9.1) RECORRÊNCIA — storage e geração (Bitrix)
+  // 9.1) RECORRÊNCIA — storage e geração
   // =========================
   function safeJsonParse(s) {
     try { return JSON.parse(String(s || "")); } catch (_) { return null; }
   }
-
   function makeRuleId() {
     return "R" + Math.random().toString(16).slice(2) + Date.now().toString(16);
   }
-
   function dowNamePt(i){
     return ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"][i] || String(i);
   }
-
   function ymdKey(d){
     const y = d.getFullYear();
     const m = String(d.getMonth()+1).padStart(2,"0");
     const dd = String(d.getDate()).padStart(2,"0");
     return `${y}-${m}-${dd}`;
   }
-
   function nextDays(fromDate, n){
     const out = [];
     const base = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate(), 0,0,0,0);
@@ -1063,12 +988,10 @@
     }
     return out;
   }
-
   function isWeekday(d){
     const w = d.getDay();
     return w !== 0 && w !== 6;
   }
-
   function occursOn(rule, d){
     const t = (rule && rule.type) ? String(rule.type) : "";
     if (t === "DAILY_BUSINESS") return isWeekday(d);
@@ -1090,11 +1013,9 @@
     }
     return false;
   }
-
   function markerFor(ruleId, dateKey){
     return `[RUID=${ruleId}:${dateKey}]`;
   }
-
   function extractMarkersFromDeals(deals){
     const set = new Set();
     (deals || []).forEach((d) => {
@@ -1107,7 +1028,6 @@
   }
 
   async function loadRecurrenceConfigDeals() {
-    // Pega todos os deals de configuração (categoria 17, etapa GET • RECORRÊNCIA)
     const select = ["ID","TITLE","STAGE_ID","ASSIGNED_BY_ID", UF_OBS, "DATE_MODIFY", "DATE_CREATE"];
     const cfgDeals = await bxAll("crm.deal.list", {
       filter: { CATEGORY_ID: CATEGORY_MAIN, STAGE_ID: RECURRENCE_STAGE_ID },
@@ -1115,7 +1035,6 @@
       order: { ID: "DESC" },
     }).catch(() => []);
 
-    // Mapear por user
     STATE.recurConfigDealIdByUser = new Map();
     STATE.recurRulesByUser = new Map();
 
@@ -1123,7 +1042,6 @@
       const uid = String(d.ASSIGNED_BY_ID || "").trim();
       if (!uid) return;
 
-      // preferir o mais novo
       if (!STATE.recurConfigDealIdByUser.has(uid)) {
         STATE.recurConfigDealIdByUser.set(uid, String(d.ID));
       }
@@ -1139,7 +1057,6 @@
     const uid = String(userId);
     if (STATE.recurConfigDealIdByUser.has(uid)) return STATE.recurConfigDealIdByUser.get(uid);
 
-    // criar um config deal se não existir
     const fields = {
       CATEGORY_ID: Number(CATEGORY_MAIN),
       STAGE_ID: String(RECURRENCE_STAGE_ID),
@@ -1148,6 +1065,7 @@
       [UF_OBS]: JSON.stringify({ ver: 1, userId: uid, rules: [] }),
     };
 
+    // ✅ SALVAR AQUI (cria o Deal de configuração de recorrência)
     const id = await bx("crm.deal.add", { fields });
     const dealId = String(id);
     STATE.recurConfigDealIdByUser.set(uid, dealId);
@@ -1159,7 +1077,10 @@
     const uid = String(userId);
     const dealId = await ensureConfigDealForUser(uid);
     const payload = JSON.stringify({ ver: 1, userId: uid, rules: Array.isArray(rules) ? rules : [] });
+
+    // ✅ SALVAR AQUI (atualiza JSON de regras no UF_OBS do deal de configuração)
     await bx("crm.deal.update", { id: String(dealId), fields: { [UF_OBS]: payload } });
+
     STATE.recurRulesByUser.set(uid, Array.isArray(rules) ? rules : []);
   }
 
@@ -1179,12 +1100,10 @@
   }
 
   async function generateRecurringDealsWindow() {
-    // evitar rodar o gerador muitas vezes
     const now = Date.now();
     if (now - STATE.recurLastGenAt < 60 * 1000) return;
     STATE.recurLastGenAt = now;
 
-    // garantir cache de regras
     if (!STATE.recurRulesByUser || STATE.recurRulesByUser.size === 0) {
       await loadRecurrenceConfigDeals();
     }
@@ -1193,7 +1112,6 @@
     const today = new Date();
     const days = nextDays(today, RECURRENCE_WINDOW_DAYS);
 
-    // montar fila de criações (serial para evitar rate limit)
     for (const u of USERS) {
       const uid = String(u.userId);
       const rules = STATE.recurRulesByUser.get(uid) || [];
@@ -1211,7 +1129,6 @@
         const mm = Number(rule.mm ?? 0);
 
         for (const d of days) {
-          // mensal: se day > dias do mês, não ocorre (implicitamente occursOn já falha)
           if (!occursOn(rule, d)) continue;
 
           const key = ymdKey(d);
@@ -1219,7 +1136,9 @@
           if (markers.has(mk)) continue;
 
           const iso = isoFromDateAndTimeParts(d, hh, mm);
-          const obs = (rule.obs ? String(rule.obs).trim() : "").replace(/\[RUID=.*?\]/g, "").trim();
+
+          // OBS sem markers antigos
+          const baseObs = (rule.obs ? String(rule.obs).trim() : "").replace(/\[RUID=.*?\]/g, "").trim();
           const marker = markerFor(rid, key);
 
           const fields = {
@@ -1228,16 +1147,24 @@
             TITLE: title,
             ASSIGNED_BY_ID: Number(uid),
             [UF_PRAZO]: iso,
-            [UF_OBS]: (obs ? (obs + "\n") : "") + marker,
           };
+
+          // ✅ IMPORTANTE: agora aplica os UFs da regra na instância (isso faltava)
+          if (rule.etapaUf) fields[UF_ETAPA] = String(rule.etapaUf);
+          if (rule.tipo) fields[UF_TAREFA] = String(rule.tipo);
+          if (rule.urg) fields[UF_URGENCIA] = String(rule.urg);
+          if (rule.colab) fields[UF_COLAB] = String(rule.colab);
+
+          fields[UF_OBS] = (baseObs ? (baseObs + "\n") : "") + marker;
 
           try {
             setSoftStatus("Gerando recorrências…");
+
+            // ✅ SALVAR AQUI (cria instância do deal recorrente)
             const newId = await bx("crm.deal.add", { fields });
-            // atualizar markers in-memory para evitar duplicar na mesma execução
+
             markers.add(mk);
 
-            // também “espelhar” minimamente no STATE para reduzir piscadas
             STATE.dealsAll.unshift({
               ID: String(newId),
               TITLE: title,
@@ -1246,24 +1173,27 @@
               DATE_CREATE: new Date().toISOString(),
               DATE_MODIFY: new Date().toISOString(),
               [UF_PRAZO]: iso,
-              [UF_OBS]: (obs ? (obs + "\n") : "") + marker,
+              [UF_OBS]: fields[UF_OBS],
+              [UF_ETAPA]: fields[UF_ETAPA] || "",
+              [UF_TAREFA]: fields[UF_TAREFA] || "",
+              [UF_URGENCIA]: fields[UF_URGENCIA] || "",
+              [UF_COLAB]: fields[UF_COLAB] || "",
               _prazo: new Date(iso).toISOString(),
               _late: false,
-              _urgId: "",
+              _urgId: String(fields[UF_URGENCIA] || ""),
               _urgTxt: "",
-              _tarefaId: "",
+              _tarefaId: String(fields[UF_TAREFA] || ""),
               _tarefaTxt: "",
-              _etapaId: "",
+              _etapaId: String(fields[UF_ETAPA] || ""),
               _etapaTxt: "",
-              _colabId: "",
-              _colabTxt: "",
-              _obs: (obs ? (obs + "\n") : "") + marker,
+              _colabId: String(fields[UF_COLAB] || ""),
+              _colabTxt: String(fields[UF_COLAB] || ""),
+              _obs: fields[UF_OBS],
               _hasObs: true,
               _assigned: String(uid),
               _accent: dealAccent({ ID: String(newId), TITLE: title }),
             });
           } catch (_) {
-            // se bater rate limit / erro temporário, para para manter painel estável
             return;
           }
         }
@@ -1457,6 +1387,38 @@
     return u ? u.name : `USER ${assignedId || "—"}`;
   }
 
+  function sortDeals(deals) {
+    function createdMs(d) {
+      const x = d && d.DATE_CREATE ? new Date(d.DATE_CREATE) : null;
+      const t = x ? x.getTime() : NaN;
+      return Number.isFinite(t) ? t : 0;
+    }
+    function prazoMs(d) {
+      const v = d && d._prazo;
+      if (!v) return Number.POSITIVE_INFINITY;
+      const x = new Date(v);
+      const t = x.getTime();
+      return Number.isFinite(t) ? t : Number.POSITIVE_INFINITY;
+    }
+
+    return (deals || [])
+      .slice()
+      .sort((a, b) => {
+        const ua = isUrgenteText(a._urgTxt) ? 0 : 1;
+        const ub = isUrgenteText(b._urgTxt) ? 0 : 1;
+        if (ua !== ub) return ua - ub;
+
+        const la = a._late ? 0 : 1;
+        const lb = b._late ? 0 : 1;
+        if (la !== lb) return la - lb;
+
+        const pa = prazoMs(a), pb = prazoMs(b);
+        if (pa !== pb) return pa - pb;
+
+        return createdMs(a) - createdMs(b);
+      });
+  }
+
   function runSearchAdmin() {
     if (!ensureAdminForSearch()) return;
 
@@ -1489,7 +1451,7 @@
   el.searchInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); runSearchAdmin(); } });
 
   // =========================
-  // 15) CALENDÁRIO (robusto no duplo clique)
+  // 15) CALENDÁRIO
   // =========================
   let selectedDate = new Date();
   let calendarCursor = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
@@ -1676,21 +1638,13 @@
     `;
   }
 
-  function removeFromOpen(dealId) {
-    const id = String(dealId);
-    STATE.dealsOpen = (STATE.dealsOpen || []).filter((d) => String(d.ID) !== id);
-  }
-
   function updateDealInState(dealId, patchFields) {
     const id = String(dealId);
     const all = (STATE.dealsAll || []);
     const open = (STATE.dealsOpen || []);
     const a = all.find(d => String(d.ID) === id);
     const b = open.find(d => String(d.ID) === id);
-    const apply = (d) => {
-      if (!d) return;
-      Object.assign(d, patchFields || {});
-    };
+    const apply = (d) => { if (d) Object.assign(d, patchFields || {}); };
     apply(a); apply(b);
   }
 
@@ -1718,10 +1672,10 @@
     if (followTipoId) fields[UF_TAREFA] = followTipoId;
     if (aguardEtapaId) fields[UF_ETAPA] = aguardEtapaId;
 
+    // ✅ SALVAR AQUI (cria deal de follow-up)
     await bx("crm.deal.add", { fields });
   }
 
-  // ✅ agora pode “voltar pro LEADS” quando chamado de lá
   function openFollowUpModal(user, prefillName, opts) {
     const dt = new Date();
     dt.setMinutes(dt.getMinutes() + 60);
@@ -1742,16 +1696,16 @@
         </div>
         <div style="grid-column:1 / -1;display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-top:6px">
           <button class="eqd-btn" data-action="modalClose">Cancelar</button>
-          <button class="eqd-btn eqd-btnPrimary" id="fuCreate">Criar FOLLOW-UP</button>
+          <button class="eqd-btn eqd-btnPrimary" id="fuSave">SALVAR FOLLOW-UP</button>
         </div>
       </div>
     `);
 
     const warn = document.getElementById("fuWarn");
-    const btn = document.getElementById("fuCreate");
+    const btn = document.getElementById("fuSave");
 
     btn.onclick = async () => {
-      const lk = `fuCreate:${user.userId}`;
+      const lk = `fuSave:${user.userId}`;
       if (!lockTry(lk)) return;
       try {
         btn.disabled = true;
@@ -1763,10 +1717,11 @@
         const prazoIso = localInputToIsoWithOffset(prazoLocal);
         if (!prazoIso) throw new Error("Prazo inválido.");
 
-        setBusy("Criando follow-up…");
+        setBusy("Salvando follow-up…");
+
+        // ✅ SALVAR AQUI
         await createFollowUpDealForUser(user, nm, prazoIso);
 
-        // ✅ se veio do LEADS, volta pro LEADS
         closeModal();
         await refreshData(true);
         if (opts && opts.returnToLeads) {
@@ -1785,9 +1740,6 @@
     };
   }
 
-  // =========================
-  // 18) LISTA DE FOLLOW-UP (sem antigos)
-  // =========================
   function isFollowupDeal(d) {
     const t = norm(d._tarefaTxt || "");
     if (t.includes(norm("FOLLOW-UP"))) return true;
@@ -1837,40 +1789,19 @@
     document.getElementById("fuListClear").onclick = () => { document.getElementById("fuListSearch").value = ""; render(""); };
   }
 
-   // =========================
-// 18.1) NOVA TAREFA (normal + recorrência) — UI e criação
-// (corrigido p/ NÃO ficar "(vazio)" em ETAPA / TIPO / URGÊNCIA no MULTI)
-// =========================
-function openNewTaskModalForUser(user, opts) {
-  const dt0 = new Date();
-  dt0.setMinutes(dt0.getMinutes() + 60);
-  const localDefault = new Date(dt0.getTime() - dt0.getTimezoneOffset() * 60000)
-    .toISOString()
-    .slice(0, 16);
-
-  // ---------- UFs (as que você confirmou) ----------
-  // OBS já existe no painel como UF_OBS (mantém), mas garantimos fallback caso não exista
-  const UF_OBS_FALLBACK = "UF_CRM_691385BE7D33D";
-  const UF_ETAPA = "UF_CRM_1768179977089";
-  const UF_TIPO_TAREFA = "UF_CRM_1768185018696";
-  const UF_URGENCIA = "UF_CRM_1768174982";
-  const UF_COLAB = "UF_CRM_1770327799"; // texto (não user)
-
-  // ---------- helpers p/ carregar itens de campos LISTA ----------
+  // =========================
+  // 18) NOVA TAREFA (normal + recorrência)
+  // =========================
   async function ensureDealFieldsMeta() {
-    // cache estável (não depende de localStorage)
-    if (STATE && STATE.dealFieldsMeta) return STATE.dealFieldsMeta;
+    if (STATE.dealFieldsMeta) return STATE.dealFieldsMeta;
     const meta = await bx("crm.deal.fields", {});
-    if (!STATE) window.STATE = {};
     STATE.dealFieldsMeta = meta || {};
     return STATE.dealFieldsMeta;
   }
 
   function getFieldItemsFromMeta(meta, fieldCode) {
-    // Bitrix geralmente retorna { UF_XXX: { items: [{ID,VALUE,SORT}, ...] } }
     const f = meta && meta[fieldCode];
     const items = f && Array.isArray(f.items) ? f.items : [];
-    // ordena por SORT quando existir
     return items.slice().sort((a, b) => Number(a.SORT || 0) - Number(b.SORT || 0));
   }
 
@@ -1883,269 +1814,267 @@ function openNewTaskModalForUser(user, opts) {
     return first + rest;
   }
 
-  // ---------- UI ----------
-  const daysRow = [0, 1, 2, 3, 4, 5, 6]
-    .map((i) => {
+  function openNewTaskModalForUser(user, opts) {
+    const dt0 = new Date();
+    dt0.setMinutes(dt0.getMinutes() + 60);
+    const localDefault = new Date(dt0.getTime() - dt0.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+
+    const daysRow = [0, 1, 2, 3, 4, 5, 6].map((i) => {
       return `
         <label style="display:flex;gap:8px;align-items:center;font-size:12px;font-weight:950">
           <input type="checkbox" class="ntDow" value="${i}" ${[1, 2, 3, 4, 5].includes(i) ? "checked" : ""}>
           ${dowNamePt(i)}
         </label>
       `;
-    })
-    .join("");
+    }).join("");
 
-  openModal(
-    `Nova tarefa — ${user.name}`,
-    `
-    <div class="eqd-warn" id="ntWarn"></div>
+    openModal(
+      `Nova tarefa — ${user.name}`,
+      `
+      <div class="eqd-warn" id="ntWarn"></div>
 
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-      <div style="grid-column:1 / -1">
-        <div style="font-size:11px;font-weight:900;margin-bottom:6px">NOME DO NEGÓCIO</div>
-        <input id="ntTitle" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900"
-               placeholder="Ex.: LIGAR PARA JOÃO / COBRAR DOCUMENTOS / REUNIÃO..." />
-      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div style="grid-column:1 / -1">
+          <div style="font-size:11px;font-weight:900;margin-bottom:6px">NOME DO NEGÓCIO</div>
+          <input id="ntTitle" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900"
+                 placeholder="Ex.: LIGAR PARA JOÃO / COBRAR DOCUMENTOS / REUNIÃO..." />
+        </div>
 
-      <div>
-        <div style="font-size:11px;font-weight:900;margin-bottom:6px">PRAZO (data e hora)</div>
-        <input id="ntPrazo" type="datetime-local" value="${localDefault}"
-               style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" />
-        <div style="font-size:11px;font-weight:900;opacity:.70;margin-top:6px">Para recorrência, este horário vira o horário padrão.</div>
-      </div>
+        <div>
+          <div style="font-size:11px;font-weight:900;margin-bottom:6px">PRAZO (data e hora)</div>
+          <input id="ntPrazo" type="datetime-local" value="${localDefault}"
+                 style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" />
+          <div style="font-size:11px;font-weight:900;opacity:.70;margin-top:6px">Para recorrência, este horário vira o horário padrão.</div>
+        </div>
 
-      <div>
-        <div style="font-size:11px;font-weight:900;margin-bottom:6px">RECORRÊNCIA</div>
-        <select id="ntRecType" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
-          <option value="NONE">Sem recorrência</option>
-          <option value="DAILY_BUSINESS">Diária (dias úteis)</option>
-          <option value="WEEKLY">Semanal (escolher dias)</option>
-          <option value="MONTHLY">Mensal (dia do mês)</option>
-          <option value="YEARLY">Anual (dia/mês)</option>
-        </select>
-      </div>
+        <div>
+          <div style="font-size:11px;font-weight:900;margin-bottom:6px">RECORRÊNCIA</div>
+          <select id="ntRecType" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
+            <option value="NONE">Sem recorrência</option>
+            <option value="DAILY_BUSINESS">Diária (dias úteis)</option>
+            <option value="WEEKLY">Semanal (escolher dias)</option>
+            <option value="MONTHLY">Mensal (dia do mês)</option>
+            <option value="YEARLY">Anual (dia/mês)</option>
+          </select>
+        </div>
 
-      <div style="grid-column:1 / -1;display:none" id="ntWeeklyBox">
-        <div style="font-size:11px;font-weight:900;margin-bottom:6px">DIAS DA SEMANA</div>
-        <div style="display:flex;gap:12px;flex-wrap:wrap;border:1px solid rgba(0,0,0,.10);padding:10px;border-radius:12px;background:rgba(255,255,255,.55)">
-          ${daysRow}
+        <div style="grid-column:1 / -1;display:none" id="ntWeeklyBox">
+          <div style="font-size:11px;font-weight:900;margin-bottom:6px">DIAS DA SEMANA</div>
+          <div style="display:flex;gap:12px;flex-wrap:wrap;border:1px solid rgba(0,0,0,.10);padding:10px;border-radius:12px;background:rgba(255,255,255,.55)">
+            ${daysRow}
+          </div>
+        </div>
+
+        <div style="display:none" id="ntMonthlyBox">
+          <div style="font-size:11px;font-weight:900;margin-bottom:6px">DIA DO MÊS</div>
+          <input id="ntMonthDay" type="number" min="1" max="31" value="1"
+                 style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" />
+        </div>
+
+        <div style="display:none" id="ntYearlyBox">
+          <div style="font-size:11px;font-weight:900;margin-bottom:6px">DATA DO ANO</div>
+          <input id="ntYearMD" type="date"
+                 style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" />
+          <div style="font-size:11px;font-weight:900;opacity:.70;margin-top:6px">Escolha qualquer ano — será salvo só o dia/mês.</div>
+        </div>
+
+        <div>
+          <div style="font-size:11px;font-weight:900;margin-bottom:6px">ETAPA</div>
+          <select id="ntEtapa" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
+            <option value="">Carregando…</option>
+          </select>
+        </div>
+
+        <div>
+          <div style="font-size:11px;font-weight:900;margin-bottom:6px">TIPO DA TAREFA</div>
+          <select id="ntTipo" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
+            <option value="">Carregando…</option>
+          </select>
+        </div>
+
+        <div>
+          <div style="font-size:11px;font-weight:900;margin-bottom:6px">URGÊNCIA</div>
+          <select id="ntUrg" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
+            <option value="">Carregando…</option>
+          </select>
+        </div>
+
+        <div>
+          <div style="font-size:11px;font-weight:900;margin-bottom:6px">COLAB (opcional)</div>
+          <input id="ntColab" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900"
+                 placeholder="Texto livre (opcional)" />
+        </div>
+
+        <div style="grid-column:1 / -1">
+          <div style="font-size:11px;font-weight:900;margin-bottom:6px">OBS (opcional)</div>
+          <textarea id="ntObs" rows="4" style="width:100%;border-radius:14px;border:1px solid rgba(30,40,70,.16);padding:10px;font-weight:900;outline:none" placeholder="Observações..."></textarea>
+        </div>
+
+        <div style="grid-column:1 / -1;display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+          <button class="eqd-btn" data-action="modalClose">Cancelar</button>
+          <button class="eqd-btn eqd-btnPrimary" id="ntSave">SALVAR / CRIAR</button>
         </div>
       </div>
+    `,
+      { wide: true }
+    );
 
-      <div style="display:none" id="ntMonthlyBox">
-        <div style="font-size:11px;font-weight:900;margin-bottom:6px">DIA DO MÊS</div>
-        <input id="ntMonthDay" type="number" min="1" max="31" value="1"
-               style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" />
-      </div>
+    // preencher selects
+    (async () => {
+      try {
+        const meta = await ensureDealFieldsMeta();
+        const etapaItems = getFieldItemsFromMeta(meta, UF_ETAPA);
+        const tipoItems = getFieldItemsFromMeta(meta, UF_TAREFA);
+        const urgItems = getFieldItemsFromMeta(meta, UF_URGENCIA);
 
-      <div style="display:none" id="ntYearlyBox">
-        <div style="font-size:11px;font-weight:900;margin-bottom:6px">DATA DO ANO</div>
-        <input id="ntYearMD" type="date"
-               style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" />
-        <div style="font-size:11px;font-weight:900;opacity:.70;margin-top:6px">Escolha qualquer ano — será salvo só o dia/mês.</div>
-      </div>
+        const selEtapa = document.getElementById("ntEtapa");
+        const selTipo = document.getElementById("ntTipo");
+        const selUrg = document.getElementById("ntUrg");
 
-      <div>
-        <div style="font-size:11px;font-weight:900;margin-bottom:6px">ETAPA</div>
-        <select id="ntEtapa" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
-          <option value="">Carregando…</option>
-        </select>
-      </div>
+        if (selEtapa) selEtapa.innerHTML = renderOptions(etapaItems, "Selecione a etapa…");
+        if (selTipo) selTipo.innerHTML = renderOptions(tipoItems, "Selecione o tipo…");
+        if (selUrg) selUrg.innerHTML = renderOptions(urgItems, "Selecione a urgência…");
+      } catch (_) {
+        const selEtapa = document.getElementById("ntEtapa");
+        const selTipo = document.getElementById("ntTipo");
+        const selUrg = document.getElementById("ntUrg");
+        if (selEtapa) selEtapa.innerHTML = `<option value="">(falha ao carregar)</option>`;
+        if (selTipo) selTipo.innerHTML = `<option value="">(falha ao carregar)</option>`;
+        if (selUrg) selUrg.innerHTML = `<option value="">(falha ao carregar)</option>`;
+      }
+    })();
 
-      <div>
-        <div style="font-size:11px;font-weight:900;margin-bottom:6px">TIPO DA TAREFA</div>
-        <select id="ntTipo" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
-          <option value="">Carregando…</option>
-        </select>
-      </div>
+    const selRec = document.getElementById("ntRecType");
+    const weeklyBox = document.getElementById("ntWeeklyBox");
+    const monthlyBox = document.getElementById("ntMonthlyBox");
+    const yearlyBox = document.getElementById("ntYearlyBox");
+    const warn = document.getElementById("ntWarn");
+    const btn = document.getElementById("ntSave");
 
-      <div>
-        <div style="font-size:11px;font-weight:900;margin-bottom:6px">URGÊNCIA</div>
-        <select id="ntUrg" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
-          <option value="">Carregando…</option>
-        </select>
-      </div>
-
-      <div>
-        <div style="font-size:11px;font-weight:900;margin-bottom:6px">COLAB (opcional)</div>
-        <input id="ntColab" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900"
-               placeholder="Texto livre (opcional)" />
-      </div>
-
-      <div style="grid-column:1 / -1">
-        <div style="font-size:11px;font-weight:900;margin-bottom:6px">OBS (opcional)</div>
-        <textarea id="ntObs" rows="4" style="width:100%;border-radius:14px;border:1px solid rgba(30,40,70,.16);padding:10px;font-weight:900;outline:none" placeholder="Observações..."></textarea>
-      </div>
-
-      <div style="grid-column:1 / -1;display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
-        <button class="eqd-btn" data-action="modalClose">Cancelar</button>
-        <button class="eqd-btn eqd-btnPrimary" id="ntCreate">Criar</button>
-      </div>
-    </div>
-  `,
-    { wide: true }
-  );
-
-  // ---------- preencher selects (ETAPA / TIPO / URGÊNCIA) via Bitrix ----------
-  (async () => {
-    try {
-      const meta = await ensureDealFieldsMeta();
-
-      const etapaItems = getFieldItemsFromMeta(meta, UF_ETAPA);
-      const tipoItems = getFieldItemsFromMeta(meta, UF_TIPO_TAREFA);
-      const urgItems = getFieldItemsFromMeta(meta, UF_URGENCIA);
-
-      const selEtapa = document.getElementById("ntEtapa");
-      const selTipo = document.getElementById("ntTipo");
-      const selUrg = document.getElementById("ntUrg");
-
-      if (selEtapa) selEtapa.innerHTML = renderOptions(etapaItems, "Selecione a etapa…");
-      if (selTipo) selTipo.innerHTML = renderOptions(tipoItems, "Selecione o tipo…");
-      if (selUrg) selUrg.innerHTML = renderOptions(urgItems, "Selecione a urgência…");
-    } catch (e) {
-      // não quebra o modal — só deixa o usuário ver que falhou
-      const selEtapa = document.getElementById("ntEtapa");
-      const selTipo = document.getElementById("ntTipo");
-      const selUrg = document.getElementById("ntUrg");
-      if (selEtapa) selEtapa.innerHTML = `<option value="">(falha ao carregar)</option>`;
-      if (selTipo) selTipo.innerHTML = `<option value="">(falha ao carregar)</option>`;
-      if (selUrg) selUrg.innerHTML = `<option value="">(falha ao carregar)</option>`;
+    function refreshRecUI() {
+      const v = String(selRec.value || "NONE");
+      weeklyBox.style.display = v === "WEEKLY" ? "block" : "none";
+      monthlyBox.style.display = v === "MONTHLY" ? "block" : "none";
+      yearlyBox.style.display = v === "YEARLY" ? "block" : "none";
     }
-  })();
+    selRec.onchange = refreshRecUI;
+    refreshRecUI();
 
-  // ---------- hooks ----------
-  const selRec = document.getElementById("ntRecType");
-  const weeklyBox = document.getElementById("ntWeeklyBox");
-  const monthlyBox = document.getElementById("ntMonthlyBox");
-  const yearlyBox = document.getElementById("ntYearlyBox");
-  const warn = document.getElementById("ntWarn");
-  const btn = document.getElementById("ntCreate");
+    btn.onclick = async () => {
+      const lk = `ntSave:${user.userId}`;
+      if (!lockTry(lk)) return;
 
-  function refreshRecUI() {
-    const v = String(selRec.value || "NONE");
-    weeklyBox.style.display = v === "WEEKLY" ? "block" : "none";
-    monthlyBox.style.display = v === "MONTHLY" ? "block" : "none";
-    yearlyBox.style.display = v === "YEARLY" ? "block" : "none";
-  }
-  selRec.onchange = refreshRecUI;
-  refreshRecUI();
+      try {
+        btn.disabled = true;
+        warn.style.display = "none";
+        warn.textContent = "";
 
-  btn.onclick = async () => {
-    const lk = `ntCreate:${user.userId}`;
-    if (!lockTry(lk)) return;
+        const nomeNegocio = String(document.getElementById("ntTitle").value || "").trim();
+        if (!nomeNegocio) throw new Error("Preencha o NOME DO NEGÓCIO.");
 
-    try {
-      btn.disabled = true;
-      warn.style.display = "none";
-      warn.textContent = "";
+        const prazoLocal = String(document.getElementById("ntPrazo").value || "").trim();
+        const prazoIso = localInputToIsoWithOffset(prazoLocal);
+        if (!prazoIso) throw new Error("Prazo inválido.");
 
-      const nomeNegocio = String(document.getElementById("ntTitle").value || "").trim();
-      if (!nomeNegocio) throw new Error("Preencha o NOME DO NEGÓCIO.");
+        const obs = String(document.getElementById("ntObs").value || "").trim();
+        const colabTxt = String(document.getElementById("ntColab").value || "").trim();
 
-      const prazoLocal = String(document.getElementById("ntPrazo").value || "").trim();
-      const prazoIso = localInputToIsoWithOffset(prazoLocal);
-      if (!prazoIso) throw new Error("Prazo inválido.");
+        const etapaUfVal = String((document.getElementById("ntEtapa") || {}).value || "").trim();
+        const tipoVal = String((document.getElementById("ntTipo") || {}).value || "").trim();
+        const urgVal = String((document.getElementById("ntUrg") || {}).value || "").trim();
 
-      const obs = String(document.getElementById("ntObs").value || "").trim();
-      const colabTxt = String(document.getElementById("ntColab").value || "").trim();
+        const recType = String(selRec.value || "NONE");
+        const dt = new Date(prazoIso);
+        const hh = dt.getHours();
+        const mm = dt.getMinutes();
 
-      const etapaUfVal = String((document.getElementById("ntEtapa") || {}).value || "").trim();
-      const tipoVal = String((document.getElementById("ntTipo") || {}).value || "").trim();
-      const urgVal = String((document.getElementById("ntUrg") || {}).value || "").trim();
+        setBusy("Salvando…");
 
-      const recType = String(selRec.value || "NONE");
-      const dt = new Date(prazoIso);
-      const hh = dt.getHours();
-      const mm = dt.getMinutes();
+        if (recType === "NONE") {
+          const stageId = await stageIdForUserName(user.name);
+          if (!stageId) throw new Error(`Não encontrei a coluna ${user.name} na pipeline.`);
 
-      setBusy("Criando…");
+          const fields = {
+            CATEGORY_ID: Number(CATEGORY_MAIN),
+            STAGE_ID: String(stageId),
+            TITLE: nomeNegocio,
+            ASSIGNED_BY_ID: Number(user.userId),
+            [UF_PRAZO]: prazoIso,
+          };
 
-      if (recType === "NONE") {
-        // criar tarefa simples
-        // STAGE_ID segue o padrão do painel (coluna do user); ETAPA UF é o campo-lista que você pediu
-        const stageId = await stageIdForUserName(user.name);
-        if (!stageId) throw new Error(`Não encontrei a coluna ${user.name} na pipeline.`);
+          if (obs) fields[UF_OBS] = obs;
+          if (etapaUfVal) fields[UF_ETAPA] = etapaUfVal;
+          if (tipoVal) fields[UF_TAREFA] = tipoVal;
+          if (urgVal) fields[UF_URGENCIA] = urgVal;
+          if (colabTxt) fields[UF_COLAB] = colabTxt;
 
-        const fields = {
-          CATEGORY_ID: Number(CATEGORY_MAIN),
-          STAGE_ID: String(stageId),
-          TITLE: nomeNegocio,
-          ASSIGNED_BY_ID: Number(user.userId),
-          [UF_PRAZO]: prazoIso,
+          // ✅ SALVAR AQUI (cria uma tarefa normal)
+          await bx("crm.deal.add", { fields });
+
+          closeModal();
+          await refreshData(true);
+          renderCurrentView();
+          return;
+        }
+
+        const rule = {
+          id: makeRuleId(),
+          title: nomeNegocio,
+          type: recType,
+          hh,
+          mm,
+          obs: obs || "",
+          createdAt: new Date().toISOString(),
+          etapaUf: etapaUfVal || "",
+          tipo: tipoVal || "",
+          urg: urgVal || "",
+          colab: colabTxt || "",
         };
 
-        if (obs) fields[typeof UF_OBS !== "undefined" && UF_OBS ? UF_OBS : UF_OBS_FALLBACK] = obs;
-        if (etapaUfVal) fields[UF_ETAPA] = etapaUfVal;
-        if (tipoVal) fields[UF_TIPO_TAREFA] = tipoVal;
-        if (urgVal) fields[UF_URGENCIA] = urgVal;
-        if (colabTxt) fields[UF_COLAB] = colabTxt;
+        if (recType === "WEEKLY") {
+          const dows = [...document.querySelectorAll(".ntDow:checked")].map((x) => Number(x.value));
+          if (!dows.length) throw new Error("Selecione ao menos 1 dia da semana.");
+          rule.weekDays = dows;
+        }
 
-        await bx("crm.deal.add", { fields });
+        if (recType === "MONTHLY") {
+          const md = Number(document.getElementById("ntMonthDay").value || 0);
+          if (!(md >= 1 && md <= 31)) throw new Error("Dia do mês inválido.");
+          rule.monthDay = md;
+        }
+
+        if (recType === "YEARLY") {
+          const v = String(document.getElementById("ntYearMD").value || "").trim();
+          const m = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+          if (!m) throw new Error("Escolha uma data válida no campo ANUAL.");
+          rule.yearMD = `${m[2]}-${m[3]}`;
+        }
+
+        if (!STATE.recurRulesByUser || STATE.recurRulesByUser.size === 0) {
+          await loadRecurrenceConfigDeals();
+        }
+
+        // ✅ SALVAR AQUI (salva a regra no deal de RECORRÊNCIA do user)
+        await addRuleForUser(user.userId, rule);
+
         closeModal();
+
+        await generateRecurringDealsWindow();
         await refreshData(true);
         renderCurrentView();
-        return;
+      } catch (e) {
+        warn.style.display = "block";
+        warn.textContent = "Falha:\n" + (e.message || e);
+      } finally {
+        btn.disabled = false;
+        clearBusy();
+        lockRelease(lk);
       }
+    };
+  }
 
-      // criar regra recorrente (salva no Bitrix)
-      const rule = {
-        id: makeRuleId(),
-        title: nomeNegocio,
-        type: recType,
-        hh,
-        mm,
-        obs: obs || "",
-        createdAt: new Date().toISOString(),
-        etapaUf: etapaUfVal || "",
-        tipo: tipoVal || "",
-        urg: urgVal || "",
-        colab: colabTxt || "",
-      };
-
-      if (recType === "WEEKLY") {
-        const dows = [...document.querySelectorAll(".ntDow:checked")].map((x) => Number(x.value));
-        if (!dows.length) throw new Error("Selecione ao menos 1 dia da semana.");
-        rule.weekDays = dows;
-      }
-
-      if (recType === "MONTHLY") {
-        const md = Number(document.getElementById("ntMonthDay").value || 0);
-        if (!(md >= 1 && md <= 31)) throw new Error("Dia do mês inválido.");
-        rule.monthDay = md;
-      }
-
-      if (recType === "YEARLY") {
-        const v = String(document.getElementById("ntYearMD").value || "").trim();
-        const m = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-        if (!m) throw new Error("Escolha uma data válida no campo ANUAL.");
-        rule.yearMD = `${m[2]}-${m[3]}`; // MM-DD
-      }
-
-      // garantir regras carregadas e salvar
-      if (!STATE.recurRulesByUser || STATE.recurRulesByUser.size === 0) {
-        await loadRecurrenceConfigDeals();
-      }
-      await addRuleForUser(user.userId, rule);
-
-      closeModal();
-
-      // gerar instâncias (janela) imediatamente
-      await generateRecurringDealsWindow();
-      await refreshData(true);
-      renderCurrentView();
-    } catch (e) {
-      warn.style.display = "block";
-      warn.textContent = "Falha:\n" + (e.message || e);
-    } finally {
-      btn.disabled = false;
-      clearBusy();
-      lockRelease(lk);
-    }
-  };
-}
-   
   // =========================
-  // 19) LEADS MODAL (OBS via modal + busca preta + contadores + criar manual)
+  // 19) LEADS MODAL (OBS + criar manual + mover etapa + follow-up)
   // =========================
   function leadMatchesKw(l, kwNorm) {
     if (!kwNorm) return true;
@@ -2167,7 +2096,7 @@ function openNewTaskModalForUser(user, opts) {
         <textarea id="lobText" rows="7" style="width:100%;border-radius:14px;border:1px solid rgba(30,40,70,.16);padding:10px;font-weight:850;outline:none">${escHtml(cur)}</textarea>
         <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
           <button class="eqd-btn" data-action="modalClose">Cancelar</button>
-          <button class="eqd-btn eqd-btnPrimary" id="lobSave">Salvar</button>
+          <button class="eqd-btn eqd-btnPrimary" id="lobSave">SALVAR OBS</button>
         </div>
       </div>
     `);
@@ -2183,11 +2112,13 @@ function openNewTaskModalForUser(user, opts) {
         warn.style.display = "none";
         const val = String(document.getElementById("lobText").value || "").trim();
         setBusy("Salvando OBS do lead…");
+
+        // ✅ SALVAR AQUI (salva obs no lead)
         await bx("crm.lead.update", { id: String(leadId), fields: { [LEAD_UF_OBS]: val } });
+
         await loadLeadsForOneUser(userId);
         clearBusy();
         closeModal();
-        // ✅ volta pro modal LEADS (e mantém busca)
         reopenLeadsModalSafe();
       } catch (e) {
         clearBusy();
@@ -2269,13 +2200,13 @@ function openNewTaskModalForUser(user, opts) {
 
         <div style="grid-column:1 / -1;display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
           <button class="eqd-btn" data-action="modalClose">Cancelar</button>
-          <button class="eqd-btn eqd-btnPrimary" id="nlCreate">Criar Lead</button>
+          <button class="eqd-btn eqd-btnPrimary" id="nlSave">SALVAR LEAD</button>
         </div>
       </div>
     `, { wide: true });
 
     const warn = document.getElementById("nlWarn");
-    const btn = document.getElementById("nlCreate");
+    const btn = document.getElementById("nlSave");
 
     btn.onclick = async () => {
       const lk = `leadCreate:${user.userId}`;
@@ -2318,12 +2249,14 @@ function openNewTaskModalForUser(user, opts) {
         if (dhIso) fields[LEAD_UF_DATAHORA] = dhIso;
         if (obs) fields[LEAD_UF_OBS] = obs;
 
-        setBusy("Criando lead…");
+        setBusy("Salvando lead…");
+
+        // ✅ SALVAR AQUI (cria lead)
         await bx("crm.lead.add", { fields });
+
         await loadLeadsForOneUser(user.userId);
         clearBusy();
         closeModal();
-        // ✅ volta pro LEADS
         reopenLeadsModalSafe();
       } catch (e) {
         clearBusy();
@@ -2340,7 +2273,6 @@ function openNewTaskModalForUser(user, opts) {
     const user = USERS.find((u) => String(u.userId) === String(userId));
     if (!user) return;
 
-    // ✅ salva contexto para “voltar pro LEADS”
     setLeadsCtx(user.userId, String(kwRaw || ""));
 
     setBusy("Carregando LEADS…");
@@ -2374,7 +2306,7 @@ function openNewTaskModalForUser(user, opts) {
         </div>
 
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <button class="eqd-btn" id="leadNewBtn" data-action="leadNewManual" data-userid="${user.userId}">NOVO LEAD</button>
+          <button class="eqd-btn" data-action="leadNewManual" data-userid="${user.userId}">NOVO LEAD</button>
           <button class="eqd-btn" data-action="modalClose">Fechar</button>
         </div>
       </div>
@@ -2421,17 +2353,17 @@ function openNewTaskModalForUser(user, opts) {
         OBS <b>${obsOn ? "•" : ""}</b>
       </span>`;
 
-      const mkBtn = (label, action, toStatus) =>
-        `<button class="leadBtn ${toStatus === sPerdido ? "leadBtnD" : toStatus ? "leadBtnP" : ""}" data-action="${action}" data-leadid="${l.ID}" data-tostatus="${toStatus || ""}" data-userid="${user.userId}">${label}</button>`;
+      const mkBtn = (label, toStatus) =>
+        `<button class="leadBtn ${toStatus === sPerdido ? "leadBtnD" : toStatus ? "leadBtnP" : ""}" data-action="leadMove" data-leadid="${l.ID}" data-tostatus="${toStatus || ""}" data-userid="${user.userId}">${label}</button>`;
 
       let btns = "";
       if (column === "AT") {
-        btns = `${mkBtn("ATENDIDO","leadMove",sAtendido)}${mkBtn("PERDIDO","leadMove",sPerdido)}`;
+        btns = `${mkBtn("ATENDIDO",sAtendido)}${mkBtn("PERDIDO",sPerdido)}`;
       } else if (column === "OK") {
-        btns = `${mkBtn("PERDIDO","leadMove",sPerdido)}${mkBtn("CONVERTIDO","leadMove",sConv)}
+        btns = `${mkBtn("PERDIDO",sPerdido)}${mkBtn("CONVERTIDO",sConv)}
                 <button class="leadBtn" data-action="leadFollowupModal" data-leadid="${l.ID}" data-userid="${user.userId}">FOLLOW-UP</button>`;
       } else if (column === "Q") {
-        btns = `${mkBtn("PERDIDO","leadMove",sPerdido)}${mkBtn("CONVERTIDO","leadMove",sConv)}
+        btns = `${mkBtn("PERDIDO",sPerdido)}${mkBtn("CONVERTIDO",sConv)}
                 <button class="leadBtn" data-action="leadFollowupModal" data-leadid="${l.ID}" data-userid="${user.userId}">FOLLOW-UP</button>`;
       }
 
@@ -2540,9 +2472,13 @@ function openNewTaskModalForUser(user, opts) {
   }
 
   // =========================
-  // 21) PAINEL INDIVIDUAL
+  // 21) PAINEL INDIVIDUAL / MULTI
   // =========================
   let currentView = { kind: "general", userId: null, multi: null };
+  let lastViewStack = [];
+
+  function pushView(v) { lastViewStack.push(JSON.parse(JSON.stringify(v))); }
+  function popView() { return lastViewStack.pop() || { kind:"general", userId:null, multi:null }; }
 
   function dealsOfSelectedDayPlusOverdueForUser(userId) {
     const ds = dayStart(selectedDate).getTime();
@@ -2613,6 +2549,62 @@ function openNewTaskModalForUser(user, opts) {
     `;
   }
 
+  async function openBatchRescheduleAdvanced(ids) {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() + 60);
+    const localDefault = new Date(now.getTime() - now.getTimezoneOffset()*60000).toISOString().slice(0,16);
+
+    openModal("Reagendar em lote", `
+      <div class="eqd-warn" id="brWarn"></div>
+      <div style="display:grid;grid-template-columns:1fr;gap:10px">
+        <div style="font-size:12px;font-weight:950;opacity:.85">Selecionadas: <strong>${ids.length}</strong></div>
+        <div>
+          <div style="font-size:11px;font-weight:900;margin-bottom:6px">NOVO PRAZO (data e hora)</div>
+          <input id="brPrazo" type="datetime-local" value="${localDefault}"
+                 style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" />
+        </div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+          <button class="eqd-btn" data-action="modalClose">Cancelar</button>
+          <button class="eqd-btn eqd-btnPrimary" id="brSave">SALVAR (LOTE)</button>
+        </div>
+      </div>
+    `);
+
+    const warn = document.getElementById("brWarn");
+    const btn = document.getElementById("brSave");
+
+    btn.onclick = async () => {
+      const lk = `batchResched:${ids.join(",")}`;
+      if (!lockTry(lk)) return;
+      try {
+        btn.disabled = true;
+        warn.style.display = "none";
+        const prazoLocal = String(document.getElementById("brPrazo").value || "").trim();
+        const prazoIso = localInputToIsoWithOffset(prazoLocal);
+        if (!prazoIso) throw new Error("Prazo inválido.");
+
+        setBusy("Salvando lote…");
+
+        // ✅ SALVAR AQUI (update em lote — serial pra evitar 429)
+        for (const id of ids) {
+          await bx("crm.deal.update", { id: String(id), fields: { [UF_PRAZO]: prazoIso } });
+          updateDealInState(id, { [UF_PRAZO]: prazoIso, _prazo: new Date(prazoIso).toISOString(), _late: false });
+        }
+
+        closeModal();
+        await refreshData(true);
+        renderCurrentView();
+      } catch (e) {
+        warn.style.display = "block";
+        warn.textContent = "Falha:\n" + (e.message || e);
+      } finally {
+        btn.disabled = false;
+        clearBusy();
+        lockRelease(lk);
+      }
+    };
+  }
+
   function renderUserPanel(userId) {
     const user = USERS.find((u) => Number(u.userId) === Number(userId));
     if (!user) return renderGeneral();
@@ -2622,13 +2614,10 @@ function openNewTaskModalForUser(user, opts) {
     const hasLeadsBtn = LEAD_USERS.has(String(user.userId));
     const leadsBtn = hasLeadsBtn ? `<button class="eqd-btn" data-action="leadsModal" data-userid="${user.userId}" id="btnLeads">LEADS</button>` : ``;
 
-    // ✅ FINANCEIRO só para 813, com link já ajustado no FINANCEIRO_URL
     const finBtn = String(user.userId) === "813" ? `<a class="eqd-btn" href="${FINANCEIRO_URL}" target="_blank" rel="noopener">FINANCEIRO</a>` : ``;
     const segBtn = SEGUROS_USERS.has(String(user.userId)) ? `<a class="eqd-btn" href="${SEGUROS_URL}" target="_blank" rel="noopener">SEGUROS</a>` : ``;
 
     const followListBtn = `<button class="eqd-btn" data-action="followList" data-userid="${user.userId}">LISTA DE FOLLOW-UP</button>`;
-
-    // ✅ NOVA TAREFA + GERENCIAR RECORRÊNCIA
     const newTaskBtn = `<button class="eqd-btn eqd-btnPrimary" data-action="newTaskModal" data-userid="${user.userId}">NOVA TAREFA</button>`;
     const recurBtn = `<button class="eqd-btn" data-action="recurManager" data-userid="${user.userId}">RECORRÊNCIA</button>`;
 
@@ -2791,7 +2780,7 @@ function openNewTaskModalForUser(user, opts) {
   }
 
   // =========================
-  // 22) MULTI SELEÇÃO (até 6) + NOVA TAREFA
+  // 22) MULTI SELEÇÃO
   // =========================
   let lastMultiSelection = [];
   function openMultiSelect() {
@@ -2822,13 +2811,13 @@ function openNewTaskModalForUser(user, opts) {
       if (sel.length > 6) return alert("Máximo 6.");
       lastMultiSelection = sel.slice();
       closeModal();
+      pushView(currentView);
       currentView = { kind: "multi", userId: null, multi: sel.slice() };
       renderMultiColumns(sel);
     };
   }
 
   function openNewTaskFromMulti(userIds){
-    // escolher user (dentro dos selecionados)
     openModal("Nova tarefa (Multi Seleção)", `
       <div style="font-size:12px;font-weight:950;opacity:.85">Selecione a usuária para criar a tarefa:</div>
       <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px">
@@ -2855,7 +2844,7 @@ function openNewTaskModalForUser(user, opts) {
         <div style="font-weight:950">PAINEL MULTI • Dia ${fmtDateOnly(selectedDate)}</div>
         <div class="panelTools">
           <button class="eqd-btn eqd-btnPrimary" data-action="newTaskMulti">NOVA TAREFA</button>
-          <button class="eqd-btn" data-action="backGeneral">VOLTAR</button>
+          <button class="eqd-btn" data-action="backToPrevious">VOLTAR</button>
         </div>
       </div>
 
@@ -2888,609 +2877,577 @@ function openNewTaskModalForUser(user, opts) {
   }
 
   // =========================
-  // 23) DONE / EDIT / DELETE / URG
+  // 23) AÇÕES: concluir / editar / excluir / leads move / etc.
   // =========================
-  function openDoneMenu(dealId) {
-    const now = new Date();
-    now.setMinutes(now.getMinutes() + 60);
-    const localDefault = new Date(now.getTime() - now.getTimezoneOffset()*60000).toISOString().slice(0,16);
+  async function refreshData(forceNetwork) {
+    if (!STATE.doneStageId) await loadStagesForCategory(CATEGORY_MAIN);
 
-    openModal("Concluir", `
-      <div style="font-size:12px;font-weight:950;opacity:.88;margin-bottom:8px">O que você quer fazer?</div>
-
-      <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end">
-        <button class="eqd-btn" data-action="modalClose">Cancelar</button>
-        <button class="eqd-btn eqd-btnPrimary" data-action="doneOnly" data-id="${dealId}">Só concluir</button>
-        <button class="eqd-btn" id="btnDoneResched">Concluir e reagendar</button>
-      </div>
-
-      <div id="doneReschedBox" style="display:none;margin-top:12px;border-top:1px solid rgba(0,0,0,.10);padding-top:12px">
-        <div style="font-size:11px;font-weight:900;margin-bottom:6px">REAGENDAR (dia e hora)</div>
-        <input id="doneReschedDt" type="datetime-local" value="${localDefault}"
-               style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16)" />
-        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px;flex-wrap:wrap">
-          <button class="eqd-btn eqd-btnPrimary" data-action="doneReschedConfirm" data-id="${dealId}">Concluir e reagendar</button>
-        </div>
-        <div class="eqd-warn" id="doneWarn"></div>
-      </div>
-    `);
-
-    const btn = document.getElementById("btnDoneResched");
-    const box = document.getElementById("doneReschedBox");
-    btn.onclick = () => { box.style.display = box.style.display === "none" ? "block" : "none"; };
-  }
-
-  async function doneOnly(dealId) {
-    if (!STATE.doneStageId) throw new Error("Não encontrei a coluna CONCLUÍDO na pipeline.");
-    setBusy("Concluindo…");
-    await bx("crm.deal.update", { id: String(dealId), fields: { STAGE_ID: String(STATE.doneStageId) } });
-    removeFromOpen(dealId);
-    await refreshData(false);
-    clearBusy();
-    renderCurrentView();
-  }
-
-  async function doneAndReschedule(dealId, newIso) {
-    if (!STATE.doneStageId) throw new Error("Não encontrei a coluna CONCLUÍDO na pipeline.");
-    setBusy("Concluindo e reagendando…");
-    await bx("crm.deal.update", {
-      id: String(dealId),
-      fields: { STAGE_ID: String(STATE.doneStageId), [UF_PRAZO]: newIso }
-    });
-    removeFromOpen(dealId);
-    await refreshData(false);
-    clearBusy();
-    renderCurrentView();
-  }
-
-  async function editPrazo(dealId) {
-    const deal = (STATE.dealsAll || []).find((d) => String(d.ID) === String(dealId));
-    const cur = deal && deal._prazo ? new Date(deal._prazo) : new Date();
-    const localDefault = new Date(cur.getTime() - cur.getTimezoneOffset()*60000).toISOString().slice(0,16);
-
-    openModal("Editar prazo", `
-      <div class="eqd-warn" id="epWarn"></div>
-      <div style="font-size:11px;font-weight:900;margin-bottom:6px">Novo prazo (dia e hora)</div>
-      <input id="epDt" type="datetime-local" value="${localDefault}"
-             style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16)" />
-      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px;flex-wrap:wrap">
-        <button class="eqd-btn" data-action="modalClose">Cancelar</button>
-        <button class="eqd-btn eqd-btnPrimary" id="epSaveBtn" data-action="epSave" data-id="${dealId}">Salvar</button>
-      </div>
-    `);
-  }
-
-  async function editTitle(dealId) {
-    const deal = (STATE.dealsAll || []).find((d) => String(d.ID) === String(dealId));
-    const cur = deal ? String(deal.TITLE || "").trim() : "";
-    openModal("Editar negócio", `
-      <div class="eqd-warn" id="etWarn"></div>
-      <div style="font-size:11px;font-weight:900;margin-bottom:6px">Novo nome do negócio</div>
-      <input id="etText" value="${escHtml(cur)}"
-             style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:850" />
-      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px;flex-wrap:wrap">
-        <button class="eqd-btn" data-action="modalClose">Cancelar</button>
-        <button class="eqd-btn eqd-btnPrimary" data-action="etSave" data-id="${dealId}">Salvar</button>
-      </div>
-    `);
-  }
-
-  async function editUrg(dealId) {
-    const deal = (STATE.dealsAll || []).find((d) => String(d.ID) === String(dealId));
-    const urgMap = await enums(UF_URGENCIA).catch(() => ({}));
-    const options = Object.entries(urgMap || {}).map(([id, label]) => ({ id, label: String(label||"") }))
-      .sort((a,b) => norm(a.label).localeCompare(norm(b.label)));
-
-    const curId = deal ? String(deal[UF_URGENCIA] || deal._urgId || "") : "";
-    const curTxt = curId ? (urgMap[curId] || "") : "";
-
-    openModal("Urgência", `
-      <div class="eqd-warn" id="euWarn"></div>
-      <div style="font-size:12px;font-weight:950;opacity:.85;margin-bottom:10px">Atual: <strong>${escHtml(curTxt || "—")}</strong></div>
-      <select id="euSel" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:850">
-        <option value="">(vazio)</option>
-        ${options.map(o => `<option value="${escHtml(o.id)}" ${String(o.id)===String(curId)?"selected":""}>${escHtml(o.label)}</option>`).join("")}
-      </select>
-      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px;flex-wrap:wrap">
-        <button class="eqd-btn" data-action="modalClose">Cancelar</button>
-        <button class="eqd-btn eqd-btnPrimary" data-action="euSave" data-id="${dealId}">Salvar</button>
-      </div>
-    `);
-  }
-
-  async function editObs(dealId) {
-    const old = (STATE.dealsAll || []).find((d) => String(d.ID) === String(dealId));
-    const cur = old ? String(old[UF_OBS] || "") : "";
-    openModal("Observações", `
-      <div class="eqd-warn" id="eoWarn"></div>
-      <textarea id="eoText" rows="7" style="width:100%;border-radius:14px;border:1px solid rgba(30,40,70,.16);padding:10px;font-weight:850;outline:none">${escHtml(cur)}</textarea>
-      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px;flex-wrap:wrap">
-        <button class="eqd-btn" data-action="modalClose">Cancelar</button>
-        <button class="eqd-btn eqd-btnPrimary" data-action="eoSave" data-id="${dealId}">Salvar</button>
-      </div>
-    `);
-  }
-
-  async function changeColab(dealId) {
-    const list = USERS.map((u) => `${u.userId} - ${u.name}`).join("\n");
-    const pick = String(prompt("Digite o ID do novo responsável:\n" + list) || "").trim();
-    if (!pick) return;
-    const uid = Number(pick);
-    if (!uid) return alert("ID inválido.");
+    if (!forceNetwork) loadCache();
     try {
-      setBusy("Transferindo…");
-      await bx("crm.deal.update", { id: String(dealId), fields: { ASSIGNED_BY_ID: uid } });
-      await refreshData(true);
-      clearBusy();
-      renderCurrentView();
-    } catch (e) {
-      clearBusy();
-      alert("Falha: " + (e.message || e));
+      await loadDeals();
+      await loadRecurrenceConfigDeals().catch(()=>{});
+      await generateRecurringDealsWindow().catch(()=>{});
+      renderFooterPeople();
+      el.meta.textContent = `Atualizado: ${fmt(new Date())}`;
+    } catch (_) {
+      STATE.offline = true;
+      el.meta.textContent = `Offline (cache)`;
     }
   }
 
+  function renderCurrentView() {
+    if (currentView.kind === "general") return renderGeneral();
+    if (currentView.kind === "user") return renderUserPanel(currentView.userId);
+    if (currentView.kind === "multi") return renderMultiColumns(currentView.multi || []);
+    renderGeneral();
+  }
+
+  async function markDone(dealId) {
+    if (!STATE.doneStageId) throw new Error("Etapa CONCLUÍDO não encontrada.");
+    setBusy("Concluindo…");
+    // ✅ SALVAR AQUI (move para concluído)
+    await bx("crm.deal.update", { id: String(dealId), fields: { STAGE_ID: String(STATE.doneStageId) } });
+    updateDealInState(dealId, { STAGE_ID: String(STATE.doneStageId) });
+    clearBusy();
+  }
+
   async function deleteDeal(dealId) {
-    openModal("Confirmar exclusão", `
-      <div class="eqd-warn" style="display:block">Excluir este item?</div>
-      <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+    setBusy("Excluindo…");
+    // ✅ SALVAR AQUI (exclui)
+    await bx("crm.deal.delete", { id: String(dealId) });
+    STATE.dealsAll = (STATE.dealsAll || []).filter((d)=>String(d.ID)!==String(dealId));
+    STATE.dealsOpen = (STATE.dealsOpen || []).filter((d)=>String(d.ID)!==String(dealId));
+    clearBusy();
+  }
+
+  function openDoneMenu(dealId) {
+    openModal("Concluir", `
+      <div class="eqd-warn" id="dnWarn"></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end">
         <button class="eqd-btn" data-action="modalClose">Cancelar</button>
-        <button class="eqd-btn eqd-btnDanger" id="confirmDel">Excluir</button>
+        <button class="eqd-btn eqd-btnPrimary" id="dnSave">SALVAR (CONCLUIR)</button>
       </div>
     `);
-    document.getElementById("confirmDel").onclick = async () => {
-      const lk = `del:${dealId}`;
+
+    const warn = document.getElementById("dnWarn");
+    const btn = document.getElementById("dnSave");
+    btn.onclick = async () => {
+      const lk = `done:${dealId}`;
       if (!lockTry(lk)) return;
       try {
-        setBusy("Excluindo…");
-        await bx("crm.deal.delete", { id: String(dealId) });
-        removeFromOpen(dealId);
+        btn.disabled = true;
+        warn.style.display = "none";
+        await markDone(dealId);
         closeModal();
-        await refreshData(false);
+        await refreshData(true);
         renderCurrentView();
-      } catch (err) {
-        alert("Falha ao excluir: " + (err.message || err));
+      } catch (e) {
+        warn.style.display = "block";
+        warn.textContent = "Falha:\n" + (e.message || e);
       } finally {
-        clearBusy();
+        btn.disabled = false;
         lockRelease(lk);
       }
     };
   }
 
-  // =========================
-  // 24) REAGENDAR EM LOTE (AVANÇADO)
-  // =========================
-  async function openBatchRescheduleAdvanced(dealIds) {
-    const deals = dealIds
-      .map((id) => (STATE.dealsAll || []).find((d) => String(d.ID) === String(id)))
-      .filter(Boolean);
+  function openEditPrazo(dealId) {
+    const d = (STATE.dealsAll || []).find(x=>String(x.ID)===String(dealId));
+    const dt = d && d._prazo ? new Date(d._prazo) : new Date();
+    dt.setMinutes(dt.getMinutes() + 60);
+    const localDefault = new Date(dt.getTime() - dt.getTimezoneOffset()*60000).toISOString().slice(0,16);
 
-    if (!deals.length) return alert("Nenhum card encontrado.");
-
-    const baseDay = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), 0,0,0,0);
-    const dateDefault = `${baseDay.getFullYear()}-${String(baseDay.getMonth()+1).padStart(2,"0")}-${String(baseDay.getDate()).padStart(2,"0")}`;
-
-    openModal(`Reagendar em lote • ${deals.length} item(ns)`, `
-      <div class="eqd-warn" id="brWarn"></div>
-
-      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;justify-content:space-between">
-        <div style="flex:1 1 auto;min-width:260px">
-          <div style="font-size:11px;font-weight:900;margin-bottom:6px">Dia (para todos)</div>
-          <input id="brDay" type="date" value="${dateDefault}"
-            style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:850" />
-          <div style="font-size:11px;font-weight:900;opacity:.70;margin-top:6px">
-            Escolha o dia e defina horário por card (ou manter original).
-          </div>
-        </div>
-
-        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
-          <label style="display:flex;gap:8px;align-items:center;font-size:12px;font-weight:950">
-            <input type="checkbox" id="brKeep" checked>
-            Manter horário original
-          </label>
+    openModal("Editar prazo", `
+      <div class="eqd-warn" id="epWarn"></div>
+      <div style="display:grid;grid-template-columns:1fr;gap:10px">
+        <input id="epPrazo" type="datetime-local" value="${localDefault}"
+               style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" />
+        <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
           <button class="eqd-btn" data-action="modalClose">Cancelar</button>
-          <button class="eqd-btn eqd-btnPrimary" id="brApply">Aplicar</button>
+          <button class="eqd-btn eqd-btnPrimary" id="epSave">SALVAR PRAZO</button>
         </div>
       </div>
+    `);
 
-      <div style="margin-top:12px;border-top:1px solid rgba(0,0,0,.10);padding-top:12px">
-        <div style="font-size:12px;font-weight:950;opacity:.85;margin-bottom:8px">Cards selecionados</div>
-        <div id="brList" style="display:flex;flex-direction:column;gap:10px"></div>
-      </div>
-    `, { wide: true });
-
-    const listEl = document.getElementById("brList");
-    const keepEl = document.getElementById("brKeep");
-
-    const pad2 = (n) => String(n).padStart(2,"0");
-    function hhmmFromDeal(d) {
-      if (!d || !d._prazo) return "09:00";
-      const dt = new Date(d._prazo);
-      if (Number.isNaN(dt.getTime())) return "09:00";
-      return `${pad2(dt.getHours())}:${pad2(dt.getMinutes())}`;
-    }
-
-    function renderList() {
-      const keep = !!keepEl.checked;
-      listEl.innerHTML = deals.map((d) => {
-        const h = hhmmFromDeal(d);
-        return `
-          <div class="eqd-card" style="--accent-rgb:${d._accent}">
-            <div class="eqd-bar"></div>
-            <div class="eqd-inner">
-              <div style="display:flex;gap:10px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap">
-                <div style="font-weight:950">${escHtml(bestTitleFromText(d.TITLE||""))}</div>
-                <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-                  <div style="font-size:11px;font-weight:900;opacity:.75">Horário</div>
-                  <input type="time" class="brTime" data-id="${d.ID}" value="${h}"
-                    style="padding:8px 10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900"
-                    ${keep ? "disabled" : ""} />
-                  <div style="font-size:11px;font-weight:900;opacity:.70">Original: <strong>${escHtml(h)}</strong></div>
-                </div>
-              </div>
-              <div style="font-size:11px;font-weight:900;opacity:.75;margin-top:6px">
-                Prazo atual: <strong>${escHtml(d._prazo ? fmt(d._prazo) : "—")}</strong> • ID: <strong>${escHtml(d.ID)}</strong>
-              </div>
-            </div>
-          </div>
-        `;
-      }).join("");
-    }
-
-    keepEl.onchange = renderList;
-    renderList();
-
-    document.getElementById("brApply").onclick = async () => {
-      const lk = `batchResched:${deals.map(d=>d.ID).join(",")}`;
+    const warn = document.getElementById("epWarn");
+    const btn = document.getElementById("epSave");
+    btn.onclick = async () => {
+      const lk = `prazo:${dealId}`;
       if (!lockTry(lk)) return;
-
-      const warn = document.getElementById("brWarn");
-      warn.style.display = "none"; warn.textContent = "";
-
       try {
-        const dayStr = String(document.getElementById("brDay").value || "").trim();
-        const m = dayStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-        if (!m) throw new Error("Escolha um dia válido.");
-        const targetDay = new Date(Number(m[1]), Number(m[2])-1, Number(m[3]), 0,0,0,0);
-        if (Number.isNaN(targetDay.getTime())) throw new Error("Dia inválido.");
+        btn.disabled = true;
+        warn.style.display = "none";
+        const prazoLocal = String(document.getElementById("epPrazo").value||"").trim();
+        const prazoIso = localInputToIsoWithOffset(prazoLocal);
+        if (!prazoIso) throw new Error("Prazo inválido.");
 
-        const keep = !!keepEl.checked;
-
-        setBusy("Reagendando…");
-
-        for (const d of deals) {
-          let hh = 9, mm = 0;
-          if (keep) {
-            const old = d._prazo ? new Date(d._prazo) : null;
-            if (old && !Number.isNaN(old.getTime())) { hh = old.getHours(); mm = old.getMinutes(); }
-          } else {
-            const inp = document.querySelector(`input.brTime[data-id="${d.ID}"]`);
-            const v = inp ? String(inp.value || "").trim() : "";
-            const mmatch = v.match(/^(\d{2}):(\d{2})$/);
-            if (mmatch) { hh = Number(mmatch[1]); mm = Number(mmatch[2]); }
-          }
-
-          const newIso = isoFromDateAndTimeParts(targetDay, hh, mm);
-          await bx("crm.deal.update", { id: String(d.ID), fields: { [UF_PRAZO]: newIso } });
-
-          d[UF_PRAZO] = newIso;
-          d._prazo = new Date(newIso).toISOString();
-          d._late = false;
-        }
+        setBusy("Salvando prazo…");
+        // ✅ SALVAR AQUI
+        await bx("crm.deal.update", { id: String(dealId), fields: { [UF_PRAZO]: prazoIso } });
+        updateDealInState(dealId, { [UF_PRAZO]: prazoIso, _prazo: new Date(prazoIso).toISOString() });
+        clearBusy();
 
         closeModal();
-        await refreshData(false);
+        await refreshData(true);
         renderCurrentView();
       } catch (e) {
         clearBusy();
         warn.style.display = "block";
         warn.textContent = "Falha:\n" + (e.message || e);
-        return;
       } finally {
+        btn.disabled = false;
+        lockRelease(lk);
+      }
+    };
+  }
+
+  function openEditTitle(dealId) {
+    const d = (STATE.dealsAll || []).find(x=>String(x.ID)===String(dealId));
+    const cur = d ? String(d.TITLE||"") : "";
+
+    openModal("Editar negócio", `
+      <div class="eqd-warn" id="etWarn"></div>
+      <div style="display:grid;grid-template-columns:1fr;gap:10px">
+        <input id="etTitle" value="${escHtml(cur)}"
+               style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" />
+        <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+          <button class="eqd-btn" data-action="modalClose">Cancelar</button>
+          <button class="eqd-btn eqd-btnPrimary" id="etSave">SALVAR TÍTULO</button>
+        </div>
+      </div>
+    `);
+
+    const warn = document.getElementById("etWarn");
+    const btn = document.getElementById("etSave");
+    btn.onclick = async () => {
+      const lk = `title:${dealId}`;
+      if (!lockTry(lk)) return;
+      try {
+        btn.disabled = true;
+        warn.style.display = "none";
+        const title = String(document.getElementById("etTitle").value||"").trim();
+        if (!title) throw new Error("Título vazio.");
+
+        setBusy("Salvando título…");
+        // ✅ SALVAR AQUI
+        await bx("crm.deal.update", { id: String(dealId), fields: { TITLE: title } });
+        updateDealInState(dealId, { TITLE: title });
         clearBusy();
+
+        closeModal();
+        await refreshData(true);
+        renderCurrentView();
+      } catch (e) {
+        clearBusy();
+        warn.style.display = "block";
+        warn.textContent = "Falha:\n" + (e.message || e);
+      } finally {
+        btn.disabled = false;
+        lockRelease(lk);
+      }
+    };
+  }
+
+  function openEditObs(dealId) {
+    const d = (STATE.dealsAll || []).find(x=>String(x.ID)===String(dealId));
+    const cur = d ? String(d[UF_OBS] || d._obs || "") : "";
+
+    openModal("Editar OBS", `
+      <div class="eqd-warn" id="eoWarn"></div>
+      <textarea id="eoText" rows="8" style="width:100%;border-radius:14px;border:1px solid rgba(30,40,70,.16);padding:10px;font-weight:900;outline:none">${escHtml(cur)}</textarea>
+      <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+        <button class="eqd-btn" data-action="modalClose">Cancelar</button>
+        <button class="eqd-btn eqd-btnPrimary" id="eoSave">SALVAR OBS</button>
+      </div>
+    `);
+
+    const warn = document.getElementById("eoWarn");
+    const btn = document.getElementById("eoSave");
+    btn.onclick = async () => {
+      const lk = `obs:${dealId}`;
+      if (!lockTry(lk)) return;
+      try {
+        btn.disabled = true;
+        warn.style.display = "none";
+        const val = String(document.getElementById("eoText").value||"").trim();
+
+        setBusy("Salvando OBS…");
+        // ✅ SALVAR AQUI
+        await bx("crm.deal.update", { id: String(dealId), fields: { [UF_OBS]: val } });
+        updateDealInState(dealId, { [UF_OBS]: val, _obs: val, _hasObs: !!val });
+        clearBusy();
+
+        closeModal();
+        await refreshData(true);
+        renderCurrentView();
+      } catch (e) {
+        clearBusy();
+        warn.style.display = "block";
+        warn.textContent = "Falha:\n" + (e.message || e);
+      } finally {
+        btn.disabled = false;
+        lockRelease(lk);
+      }
+    };
+  }
+
+  async function openEditUrg(dealId) {
+    const meta = await ensureDealFieldsMeta();
+    const urgItems = getFieldItemsFromMeta(meta, UF_URGENCIA);
+
+    const d = (STATE.dealsAll || []).find(x=>String(x.ID)===String(dealId));
+    const cur = d ? String(d[UF_URGENCIA] || d._urgId || "") : "";
+
+    openModal("Urgência", `
+      <div class="eqd-warn" id="euWarn"></div>
+      <select id="euSel" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
+        ${renderOptions(urgItems, "Selecione…")}
+      </select>
+      <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+        <button class="eqd-btn" data-action="modalClose">Cancelar</button>
+        <button class="eqd-btn eqd-btnPrimary" id="euSave">SALVAR URGÊNCIA</button>
+      </div>
+    `);
+
+    const sel = document.getElementById("euSel");
+    if (sel) sel.value = cur;
+
+    const warn = document.getElementById("euWarn");
+    const btn = document.getElementById("euSave");
+    btn.onclick = async () => {
+      const lk = `urg:${dealId}`;
+      if (!lockTry(lk)) return;
+      try {
+        btn.disabled = true;
+        warn.style.display = "none";
+        const v = String(sel.value||"").trim();
+
+        setBusy("Salvando urgência…");
+        // ✅ SALVAR AQUI
+        await bx("crm.deal.update", { id: String(dealId), fields: { [UF_URGENCIA]: v } });
+        updateDealInState(dealId, { [UF_URGENCIA]: v, _urgId: v });
+        clearBusy();
+
+        closeModal();
+        await refreshData(true);
+        renderCurrentView();
+      } catch (e) {
+        clearBusy();
+        warn.style.display = "block";
+        warn.textContent = "Falha:\n" + (e.message || e);
+      } finally {
+        btn.disabled = false;
+        lockRelease(lk);
+      }
+    };
+  }
+
+  function openChangeColab(dealId) {
+    const d = (STATE.dealsAll || []).find(x=>String(x.ID)===String(dealId));
+    const cur = d ? String(d[UF_COLAB] || d._colabTxt || "") : "";
+
+    openModal("Trocar colaboradora", `
+      <div class="eqd-warn" id="ccWarn"></div>
+      <input id="ccVal" value="${escHtml(cur)}" placeholder="Texto livre"
+             style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" />
+      <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+        <button class="eqd-btn" data-action="modalClose">Cancelar</button>
+        <button class="eqd-btn eqd-btnPrimary" id="ccSave">SALVAR COLAB</button>
+      </div>
+    `);
+
+    const warn = document.getElementById("ccWarn");
+    const btn = document.getElementById("ccSave");
+    btn.onclick = async () => {
+      const lk = `colab:${dealId}`;
+      if (!lockTry(lk)) return;
+      try {
+        btn.disabled = true;
+        warn.style.display = "none";
+        const v = String(document.getElementById("ccVal").value||"").trim();
+
+        setBusy("Salvando colab…");
+        // ✅ SALVAR AQUI
+        await bx("crm.deal.update", { id: String(dealId), fields: { [UF_COLAB]: v } });
+        updateDealInState(dealId, { [UF_COLAB]: v, _colabTxt: v, _colabId: v });
+        clearBusy();
+
+        closeModal();
+        await refreshData(true);
+        renderCurrentView();
+      } catch (e) {
+        clearBusy();
+        warn.style.display = "block";
+        warn.textContent = "Falha:\n" + (e.message || e);
+      } finally {
+        btn.disabled = false;
+        lockRelease(lk);
+      }
+    };
+  }
+
+  async function leadMove(userId, leadId, toStatus) {
+    if (!toStatus) return;
+    setBusy("Movendo lead…");
+    // ✅ SALVAR AQUI (move lead)
+    await bx("crm.lead.update", { id: String(leadId), fields: { STATUS_ID: String(toStatus) } });
+    await loadLeadsForOneUser(userId);
+    clearBusy();
+  }
+
+  // =========================
+  // 24) RECORRÊNCIA MANAGER (listar / deletar regras)
+  // =========================
+  async function openRecurrenceManager(userId) {
+    const user = USERS.find(u=>String(u.userId)===String(userId));
+    if (!user) return;
+
+    if (!STATE.recurRulesByUser || STATE.recurRulesByUser.size === 0) {
+      await loadRecurrenceConfigDeals();
+    }
+    const rules = (STATE.recurRulesByUser.get(String(userId)) || []).slice();
+
+    const pretty = (r) => {
+      const t = String(r.type||"");
+      if (t === "DAILY_BUSINESS") return `Diária (dias úteis) • ${String(r.hh).padStart(2,"0")}:${String(r.mm).padStart(2,"0")}`;
+      if (t === "WEEKLY") return `Semanal (${(r.weekDays||[]).map(dowNamePt).join(", ")}) • ${String(r.hh).padStart(2,"0")}:${String(r.mm).padStart(2,"0")}`;
+      if (t === "MONTHLY") return `Mensal (dia ${r.monthDay}) • ${String(r.hh).padStart(2,"0")}:${String(r.mm).padStart(2,"0")}`;
+      if (t === "YEARLY") return `Anual (${r.yearMD}) • ${String(r.hh).padStart(2,"0")}:${String(r.mm).padStart(2,"0")}`;
+      return t || "—";
+    };
+
+    openModal(`Recorrência — ${user.name}`, `
+      <div class="eqd-warn" id="rmWarn"></div>
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
+        <div style="font-size:12px;font-weight:950;opacity:.85">Regras: <strong>${rules.length}</strong></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+          <button class="eqd-btn eqd-btnPrimary" data-action="newTaskModal" data-userid="${user.userId}">+ NOVA REGRA/TAREFA</button>
+          <button class="eqd-btn" data-action="modalClose">Fechar</button>
+        </div>
+      </div>
+      <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">
+        ${rules.length ? rules.map((r)=>`
+          <div class="leadCard" style="gap:8px">
+            <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
+              <div style="font-weight:950">${escHtml(r.title||"")}</div>
+              <button class="leadBtn leadBtnD" data-action="recurDelete" data-userid="${user.userId}" data-ruleid="${escHtml(String(r.id||""))}">EXCLUIR</button>
+            </div>
+            <div class="leadMeta">
+              <span>Tipo: <strong>${escHtml(pretty(r))}</strong></span>
+              ${r.etapaUf ? `<span>Etapa: <strong>${escHtml(String(r.etapaUf))}</strong></span>` : ``}
+              ${r.tipo ? `<span>Tipo UF: <strong>${escHtml(String(r.tipo))}</strong></span>` : ``}
+              ${r.urg ? `<span>Urg UF: <strong>${escHtml(String(r.urg))}</strong></span>` : ``}
+              ${r.colab ? `<span>Colab: <strong>${escHtml(String(r.colab))}</strong></span>` : ``}
+            </div>
+          </div>
+        `).join("") : `<div class="eqd-empty">Nenhuma regra.</div>`}
+      </div>
+    `, { wide:true });
+
+    const warn = document.getElementById("rmWarn");
+    const host = el.modalBody;
+
+    host.onclick = async (e) => {
+      const b = e.target.closest("[data-action='recurDelete']");
+      if (!b) return;
+      const rid = String(b.getAttribute("data-ruleid")||"").trim();
+      const uid = String(b.getAttribute("data-userid")||"").trim();
+      if (!rid || !uid) return;
+
+      if (!confirm("Excluir esta regra de recorrência?")) return;
+
+      const lk = `recurDel:${uid}:${rid}`;
+      if (!lockTry(lk)) return;
+      try {
+        setBusy("Excluindo regra…");
+        // ✅ SALVAR AQUI (remove regra no JSON de recorrência)
+        await deleteRuleForUser(uid, rid);
+        clearBusy();
+        closeModal();
+        await refreshData(true);
+        renderCurrentView();
+      } catch (err) {
+        clearBusy();
+        warn.style.display = "block";
+        warn.textContent = "Falha:\n" + (err.message || err);
+      } finally {
         lockRelease(lk);
       }
     };
   }
 
   // =========================
-  // 25) CLICK HANDLER (global)
+  // 25) EVENT DELEGATION (tudo por data-action)
   // =========================
-  function globalClickHandler(e) {
+  document.addEventListener("click", async (e) => {
     const a = e.target.closest("[data-action]");
     if (!a) return;
-
     const act = a.getAttribute("data-action");
-    const dealId = a.getAttribute("data-id");
-    const uid = a.getAttribute("data-userid");
-    const leadId = a.getAttribute("data-leadid");
-    const toStatus = a.getAttribute("data-tostatus");
-    const defStatus = a.getAttribute("data-defaultstatus");
 
     if (act === "modalClose") return closeModal();
 
     if (act === "openUser") {
-      const userId = Number(uid);
-      if (!canOpenUserPanel(userId)) return;
-      currentView = { kind: "user", userId, multi: currentView.multi };
-      renderUserPanel(userId);
-      return;
+      const uid = a.getAttribute("data-userid");
+      if (!canOpenUserPanel(uid)) return;
+      pushView(currentView);
+      currentView = { kind:"user", userId: Number(uid), multi:null };
+      return renderCurrentView();
+    }
+
+    if (act === "backToPrevious") {
+      currentView = popView();
+      return renderCurrentView();
     }
 
     if (act === "openUserFromMulti") {
-      const userId = Number(uid);
-      if (!canOpenUserPanel(userId)) return;
-      currentView = { kind: "user", userId, multi: lastMultiSelection.slice() };
-      renderUserPanel(userId);
-      return;
+      const uid = a.getAttribute("data-userid");
+      if (!canOpenUserPanel(uid)) return;
+      pushView(currentView);
+      currentView = { kind:"user", userId: Number(uid), multi:null };
+      return renderCurrentView();
     }
 
-    if (act === "backGeneral") { currentView = { kind: "general", userId: null, multi: null }; return renderGeneral(); }
-
-    if (act === "backToPrevious") {
-      if (currentView.multi && currentView.multi.length) {
-        currentView = { kind: "multi", userId: null, multi: currentView.multi.slice() };
-        return renderMultiColumns(currentView.multi);
-      }
-      currentView = { kind: "general", userId: null, multi: null };
-      return renderGeneral();
-    }
-
-    if (act === "newTaskMulti") {
-      if (!currentView.multi || !currentView.multi.length) return;
-      return openNewTaskFromMulti(currentView.multi.slice());
-    }
-
-    if (act === "newTaskModal") {
-      const user = USERS.find((u) => Number(u.userId) === Number(uid));
-      if (!user) return;
-      closeModal(); // se veio do seletor do multi, fecha primeiro
-      return openNewTaskModalForUser(user, null);
-    }
-
-    if (act === "recurManager") {
-      const user = USERS.find((u) => Number(u.userId) === Number(uid));
-      if (!user) return;
-      return openRecurrenceManagerModalForUser(user);
-    }
-
-    if (act === "recurDelete") {
-      const ruleId = String(a.getAttribute("data-ruleid") || "").trim();
-      if (!ruleId) return;
-      const user = USERS.find((u) => Number(u.userId) === Number(uid));
-      if (!user) return;
-
-      const ok = confirm("Excluir esta regra de recorrência? (não apaga tarefas já criadas)");
-      if (!ok) return;
-
-      const lk = `recurDel:${uid}:${ruleId}`;
-      if (!lockTry(lk)) return;
-
-      (async () => {
-        try {
-          setBusy("Excluindo regra…");
-          await loadRecurrenceConfigDeals();
-          await deleteRuleForUser(uid, ruleId);
-          clearBusy();
-          closeModal();
-          // atualiza
-          await refreshData(true);
-          renderCurrentView();
-          openRecurrenceManagerModalForUser(user);
-        } catch (e) {
-          clearBusy();
-          alert("Falha: " + (e.message || e));
-        } finally {
-          lockRelease(lk);
-        }
-      })();
-      return;
+    if (act === "leadsModal") {
+      const uid = a.getAttribute("data-userid");
+      return openLeadsModalForUser(uid, "");
     }
 
     if (act === "followUpModal") {
-      const user = USERS.find((u) => Number(u.userId) === Number(uid));
+      const uid = a.getAttribute("data-userid");
+      const user = USERS.find(u=>String(u.userId)===String(uid));
       if (!user) return;
-      return openFollowUpModal(user, "", null);
+      return openFollowUpModal(user, "");
     }
 
     if (act === "followList") {
-      const user = USERS.find((u) => Number(u.userId) === Number(uid));
+      const uid = a.getAttribute("data-userid");
+      const user = USERS.find(u=>String(u.userId)===String(uid));
       if (!user) return;
       return openFollowupListModalForUser(user);
     }
 
-    if (act === "leadsModal") { return openLeadsModalForUser(uid, ""); }
-
-    if (act === "leadNewManual") {
-      const user = USERS.find((u) => String(u.userId) === String(uid));
+    if (act === "newTaskModal") {
+      const uid = a.getAttribute("data-userid");
+      const user = USERS.find(u=>String(u.userId)===String(uid));
       if (!user) return;
-      return openManualLeadCreateModal(user, defStatus || "");
+      return openNewTaskModalForUser(user);
     }
 
-    if (act === "leadMove") {
-      if (!leadId || !toStatus) return;
-      setBusy("Movendo lead…");
-      bx("crm.lead.update", { id: String(leadId), fields: { STATUS_ID: String(toStatus) } })
-        .then(() => loadLeadsForOneUser(uid))
-        .then(() => { clearBusy(); reopenLeadsModalSafe(); })
-        .catch((err) => { clearBusy(); alert(err.message || err); });
-      return;
+    if (act === "recurManager") {
+      const uid = a.getAttribute("data-userid");
+      return openRecurrenceManager(uid);
+    }
+
+    if (act === "newTaskMulti") {
+      if (currentView.kind !== "multi") return;
+      return openNewTaskFromMulti(currentView.multi || []);
     }
 
     if (act === "leadObsModal") {
-      return openLeadObsModal(uid, leadId);
+      const uid = a.getAttribute("data-userid");
+      const lid = a.getAttribute("data-leadid");
+      return openLeadObsModal(uid, lid);
+    }
+
+    if (act === "leadNewManual") {
+      const uid = a.getAttribute("data-userid");
+      const def = a.getAttribute("data-defaultstatus") || "";
+      const user = USERS.find(u=>String(u.userId)===String(uid));
+      if (!user) return;
+      return openManualLeadCreateModal(user, def);
+    }
+
+    if (act === "leadMove") {
+      const uid = a.getAttribute("data-userid");
+      const lid = a.getAttribute("data-leadid");
+      const to = a.getAttribute("data-tostatus");
+      await leadMove(uid, lid, to);
+      return reopenLeadsModalSafe();
     }
 
     if (act === "leadFollowupModal") {
-      const user = USERS.find((u) => String(u.userId) === String(uid));
+      const uid = a.getAttribute("data-userid");
+      const lid = a.getAttribute("data-leadid");
+      const user = USERS.find(u=>String(u.userId)===String(uid));
+      if (!user) return;
+
+      // tenta prefill do nome
       const leads = STATE.leadsByUser.get(String(uid)) || [];
-      const lead = leads.find((l) => String(l.ID) === String(leadId));
-      if (!user || !lead) return;
-      // ✅ depois de criar, volta pro LEADS
-      return openFollowUpModal(user, leadTitle(lead), { returnToLeads: { userId: String(uid), kw: LAST_LEADS_CTX.kw || "" } });
+      const lead = leads.find(l=>String(l.ID)===String(lid));
+      const prefill = lead ? leadTitle(lead) : "";
+      return openFollowUpModal(user, prefill, { returnToLeads: { userId: uid, kw: LAST_LEADS_CTX.kw || "" } });
     }
 
-    if (act === "doneMenu") return openDoneMenu(dealId);
-
-    if (act === "doneOnly") { closeModal(); return doneOnly(dealId).catch((err) => alert(err.message || err)); }
-
-    if (act === "doneReschedConfirm") {
-      const warn = document.getElementById("doneWarn");
-      if (warn) { warn.style.display = "none"; warn.textContent = ""; }
-      const v = document.getElementById("doneReschedDt") ? String(document.getElementById("doneReschedDt").value || "").trim() : "";
-      const iso = localInputToIsoWithOffset(v);
-      if (!iso) {
-        if (warn) { warn.style.display = "block"; warn.textContent = "Prazo inválido."; }
-        return;
-      }
-      closeModal();
-      return doneAndReschedule(dealId, iso).catch((err) => alert(err.message || err));
+    // deal actions
+    if (act === "doneMenu") {
+      const id = a.getAttribute("data-id");
+      return openDoneMenu(id);
     }
-
-    if (act === "editPrazo") return editPrazo(dealId);
-    if (act === "editTitle") return editTitle(dealId);
-    if (act === "editUrg") return editUrg(dealId);
-    if (act === "editObs") return editObs(dealId);
-    if (act === "changeColab") return changeColab(dealId);
-    if (act === "delete") return deleteDeal(dealId);
-
-    // salvar prazo / título / urg / obs (do modal)
-    if (act === "epSave") {
-      const lk = `epSave:${dealId}`;
+    if (act === "editPrazo") {
+      const id = a.getAttribute("data-id");
+      return openEditPrazo(id);
+    }
+    if (act === "editTitle") {
+      const id = a.getAttribute("data-id");
+      return openEditTitle(id);
+    }
+    if (act === "editUrg") {
+      const id = a.getAttribute("data-id");
+      return openEditUrg(id);
+    }
+    if (act === "editObs") {
+      const id = a.getAttribute("data-id");
+      return openEditObs(id);
+    }
+    if (act === "changeColab") {
+      const id = a.getAttribute("data-id");
+      return openChangeColab(id);
+    }
+    if (act === "delete") {
+      const id = a.getAttribute("data-id");
+      if (!confirm("Excluir este negócio?")) return;
+      const lk = `del:${id}`;
       if (!lockTry(lk)) return;
-
-      const btn = document.getElementById("epSaveBtn");
-      if (btn) btn.disabled = true;
-
-      const v = document.getElementById("epDt") ? String(document.getElementById("epDt").value || "").trim() : "";
-      const iso = localInputToIsoWithOffset(v);
-      if (!iso) { if (btn) btn.disabled = false; lockRelease(lk); return alert("Prazo inválido."); }
-
-      // ✅ update otimista + fecha modal imediatamente
-      const now = new Date();
-      const pDate = new Date(iso);
-      const late = !Number.isNaN(pDate.getTime()) ? pDate.getTime() < now.getTime() : false;
-      updateDealInState(dealId, {
-        [UF_PRAZO]: iso,
-        _prazo: !Number.isNaN(pDate.getTime()) ? pDate.toISOString() : "",
-        _late: late
-      });
-      closeModal();
-      renderCurrentView();
-
-      setBusy("Salvando prazo…");
-      bx("crm.deal.update", { id: String(dealId), fields: { [UF_PRAZO]: iso } })
-        .then(() => refreshData(false))
-        .then(() => { clearBusy(); renderCurrentView(); })
-        .catch((e) => { clearBusy(); alert("Falha: " + (e.message || e)); })
-        .finally(() => { if (btn) btn.disabled = false; lockRelease(lk); });
+      try {
+        await deleteDeal(id);
+        await refreshData(true);
+        renderCurrentView();
+      } finally {
+        lockRelease(lk);
+      }
       return;
     }
-
-    if (act === "etSave") {
-      const v = document.getElementById("etText") ? String(document.getElementById("etText").value || "").trim() : "";
-      if (!v) return alert("Nome vazio.");
-      setBusy("Salvando…");
-      bx("crm.deal.update", { id: String(dealId), fields: { TITLE: v } })
-        .then(() => refreshData(false))
-        .then(() => { clearBusy(); closeModal(); renderCurrentView(); })
-        .catch((e) => { clearBusy(); alert("Falha: " + (e.message || e)); });
-      return;
-    }
-
-    if (act === "euSave") {
-      const v = document.getElementById("euSel") ? String(document.getElementById("euSel").value || "").trim() : "";
-      setBusy("Salvando urgência…");
-      bx("crm.deal.update", { id: String(dealId), fields: { [UF_URGENCIA]: v } })
-        .then(() => refreshData(false))
-        .then(() => { clearBusy(); closeModal(); renderCurrentView(); })
-        .catch((e) => { clearBusy(); alert("Falha: " + (e.message || e)); });
-      return;
-    }
-
-    if (act === "eoSave") {
-      const v = document.getElementById("eoText") ? String(document.getElementById("eoText").value || "").trim() : "";
-      setBusy("Salvando OBS…");
-      bx("crm.deal.update", { id: String(dealId), fields: { [UF_OBS]: v } })
-        .then(() => refreshData(false))
-        .then(() => { clearBusy(); closeModal(); renderCurrentView(); })
-        .catch((e) => { clearBusy(); alert("Falha: " + (e.message || e)); });
-      return;
-    }
-  }
-
-  el.main.addEventListener("click", globalClickHandler);
-  el.modalBody.addEventListener("click", globalClickHandler);
+  });
 
   // =========================
-  // 26) TOP BUTTONS
+  // 26) TOPBAR BUTTONS
   // =========================
-  el.refresh.addEventListener("click", () => { refreshData(true).then(renderCurrentView).catch(() => {}); });
-  el.today.addEventListener("click", () => { selectedDate = new Date(); renderCurrentView(); });
   el.calendar.addEventListener("click", openCalendarModal);
+
+  el.today.addEventListener("click", () => {
+    selectedDate = new Date();
+    renderCurrentView();
+  });
+
   el.multi.addEventListener("click", openMultiSelect);
 
-  // =========================
-  // 27) RENDER
-  // =========================
-  function renderCurrentView() {
-    el.meta.textContent = STATE.lastOkAt ? `Atualizado em ${fmt(STATE.lastOkAt)}${STATE.offline ? " • (offline)" : ""}` : `Carregando…`;
-    renderFooterPeople();
-
-    if (currentView.kind === "user" && currentView.userId) return renderUserPanel(currentView.userId);
-    if (currentView.kind === "multi" && currentView.multi) return renderMultiColumns(currentView.multi);
-    return renderGeneral();
-  }
-
-  // =========================
-  // 28) REFRESH (cache-first + background)
-  // =========================
-  let REFRESH_RUNNING = false;
-
-  async function refreshData(force) {
-    if (REFRESH_RUNNING) return;
-    REFRESH_RUNNING = true;
-
-    try {
-      setSoftStatus(force ? "Atualizando (completo)…" : "Atualizando…");
-      if (force || !STATE.bootstrapLoaded) {
-        await loadStagesForCategory(CATEGORY_MAIN);
-        STATE.bootstrapLoaded = true;
-      }
-
-      await loadDeals();
-
-      // ✅ carregar regras e gerar instâncias (cross-PC)
-      await loadRecurrenceConfigDeals().catch(() => {});
-      await generateRecurringDealsWindow().catch(() => {});
-
-      setSoftStatus("JS: ok");
-    } catch (e) {
-      STATE.offline = true;
-      setSoftStatus("Sem conexão / limite — mantendo painel estável…");
-    } finally {
-      REFRESH_RUNNING = false;
-    }
-  }
-
-  // =========================
-  // 29) INIT (performance)
-  // =========================
-  (async () => {
-    try {
-      await loadStagesForCategory(CATEGORY_MAIN).catch(() => {});
-      STATE.bootstrapLoaded = true;
-      loadCache();
-    } catch (_) {}
-
-    currentView = { kind: "general", userId: null, multi: null };
+  el.refresh.addEventListener("click", async () => {
+    await refreshData(true);
     renderCurrentView();
+  });
 
-    refreshData(true).then(() => renderCurrentView()).catch(() => {});
-
-    setInterval(() => {
-      if (!REFRESH_RUNNING && BX_INFLIGHT === 0) {
-        refreshData(false).then(() => renderCurrentView()).catch(() => {});
-      }
+  // =========================
+  // 27) BOOT
+  // =========================
+  (async function boot() {
+    await loadStagesForCategory(CATEGORY_MAIN);
+    loadCache();
+    await refreshData(true);
+    renderGeneral();
+    setInterval(async () => {
+      await refreshData(true);
+      renderCurrentView();
     }, REFRESH_MS);
-  })().catch(showFatal);
+  })();
+
 })();
