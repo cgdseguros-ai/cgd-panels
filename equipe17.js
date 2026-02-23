@@ -1837,261 +1837,324 @@
     document.getElementById("fuListClear").onclick = () => { document.getElementById("fuListSearch").value = ""; render(""); };
   }
 
-  // =========================
-  // 18.1) NOVA TAREFA (normal + recorrência) — UI e criação
-  // =========================
-  function openNewTaskModalForUser(user, opts) {
-    const dt = new Date();
-    dt.setMinutes(dt.getMinutes() + 60);
-    const localDefault = new Date(dt.getTime() - dt.getTimezoneOffset()*60000).toISOString().slice(0, 16);
+// =========================
+// 18.1) NOVA TAREFA (normal + recorrência) — UI e criação
+// =========================
+function openNewTaskModalForUser(user, opts) {
+  const dt0 = new Date();
+  dt0.setMinutes(dt0.getMinutes() + 60);
+  const localDefault = new Date(dt0.getTime() - dt0.getTimezoneOffset()*60000).toISOString().slice(0, 16);
 
-    const daysRow = [0,1,2,3,4,5,6].map((i) => {
-      return `
-        <label style="display:flex;gap:8px;align-items:center;font-size:12px;font-weight:950">
-          <input type="checkbox" class="ntDow" value="${i}" ${[1,2,3,4,5].includes(i) ? "checked" : ""}>
-          ${dowNamePt(i)}
-        </label>
-      `;
-    }).join("");
+  // ---------- fontes de opções (sem quebrar se não existir) ----------
+  // Usuários para COLAB
+  const allUsers =
+    (opts && Array.isArray(opts.users) && opts.users.length ? opts.users : null) ||
+    (Array.isArray(STATE && STATE.users) ? STATE.users : null) ||
+    (Array.isArray(STATE && STATE.usersList) ? STATE.usersList : null) ||
+    [];
 
-    openModal(`Nova tarefa — ${user.name}`, `
-      <div class="eqd-warn" id="ntWarn"></div>
+  // Etapas (PIPELINE 17 / CATEGORY_MAIN)
+  // Se você já tem um cache de stages em algum lugar, pluga aqui.
+  const stages =
+    (opts && Array.isArray(opts.stages) && opts.stages.length ? opts.stages : null) ||
+    (Array.isArray(STATE && STATE.stages) ? STATE.stages : null) ||
+    [];
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <div style="grid-column:1 / -1">
-          <div style="font-size:11px;font-weight:900;margin-bottom:6px">TÍTULO</div>
-          <input id="ntTitle" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900"
-                 placeholder="Ex.: LIGAR PARA JOÃO / COBRAR DOCUMENTOS / REUNIÃO..." />
-        </div>
+  // Tipo da tarefa / Urgência (fallback seguro)
+  const taskTypes =
+    (opts && Array.isArray(opts.taskTypes) && opts.taskTypes.length ? opts.taskTypes : null) ||
+    (Array.isArray(STATE && STATE.taskTypes) ? STATE.taskTypes : null) ||
+    [
+      { id: "FOLLOWUP", name: "Follow-up" },
+      { id: "DOCS", name: "Documentos" },
+      { id: "REUNIAO", name: "Reunião" },
+      { id: "COBRANCA", name: "Cobrança" },
+      { id: "OUTRO", name: "Outro" },
+    ];
 
-        <div>
-          <div style="font-size:11px;font-weight:900;margin-bottom:6px">PRAZO (dia e hora)</div>
-          <input id="ntPrazo" type="datetime-local" value="${localDefault}"
-                 style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" />
-          <div style="font-size:11px;font-weight:900;opacity:.70;margin-top:6px">Para recorrência, este horário vira o horário padrão.</div>
-        </div>
+  const urgencies =
+    (opts && Array.isArray(opts.urgencies) && opts.urgencies.length ? opts.urgencies : null) ||
+    (Array.isArray(STATE && STATE.urgencies) ? STATE.urgencies : null) ||
+    [
+      { id: "BAIXA", name: "Baixa" },
+      { id: "MEDIA", name: "Média" },
+      { id: "ALTA", name: "Alta" },
+    ];
 
-        <div>
-          <div style="font-size:11px;font-weight:900;margin-bottom:6px">RECORRÊNCIA</div>
-          <select id="ntRecType" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
-            <option value="NONE">Sem recorrência</option>
-            <option value="DAILY_BUSINESS">Diária (dias úteis)</option>
-            <option value="WEEKLY">Semanal (escolher dias)</option>
-            <option value="MONTHLY">Mensal (dia do mês)</option>
-            <option value="YEARLY">Anual (dia/mês)</option>
-          </select>
-        </div>
+  // ---------- UI Recorrência ----------
+  const daysRow = [0,1,2,3,4,5,6].map((i) => {
+    return `
+      <label style="display:flex;gap:8px;align-items:center;font-size:12px;font-weight:950">
+        <input type="checkbox" class="ntDow" value="${i}" ${[1,2,3,4,5].includes(i) ? "checked" : ""}>
+        ${dowNamePt(i)}
+      </label>
+    `;
+  }).join("");
 
-        <div style="grid-column:1 / -1;display:none" id="ntWeeklyBox">
-          <div style="font-size:11px;font-weight:900;margin-bottom:6px">DIAS DA SEMANA</div>
-          <div style="display:flex;gap:12px;flex-wrap:wrap;border:1px solid rgba(0,0,0,.10);padding:10px;border-radius:12px;background:rgba(255,255,255,.55)">
-            ${daysRow}
-          </div>
-        </div>
+  // ---------- opções HTML ----------
+  const stageOptionsHtml = (stages || []).map((s) => {
+    const sid = String(s.id ?? s.ID ?? s.value ?? "");
+    const sn = String(s.name ?? s.NAME ?? s.text ?? sid);
+    return `<option value="${escHtml(sid)}">${escHtml(sn)}</option>`;
+  }).join("");
 
-        <div style="display:none" id="ntMonthlyBox">
-          <div style="font-size:11px;font-weight:900;margin-bottom:6px">DIA DO MÊS</div>
-          <input id="ntMonthDay" type="number" min="1" max="31" value="1"
-                 style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" />
-        </div>
+  const taskTypeOptionsHtml = (taskTypes || []).map((t) => {
+    const id = String(t.id ?? t.ID ?? t.value ?? "");
+    const nm = String(t.name ?? t.NAME ?? t.text ?? id);
+    return `<option value="${escHtml(id)}">${escHtml(nm)}</option>`;
+  }).join("");
 
-        <div style="display:none" id="ntYearlyBox">
-          <div style="font-size:11px;font-weight:900;margin-bottom:6px">DATA DO ANO</div>
-          <input id="ntYearMD" type="date"
-                 style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" />
-          <div style="font-size:11px;font-weight:900;opacity:.70;margin-top:6px">Escolha qualquer ano — será salvo só o dia/mês.</div>
-        </div>
+  const urgencyOptionsHtml = (urgencies || []).map((u) => {
+    const id = String(u.id ?? u.ID ?? u.value ?? "");
+    const nm = String(u.name ?? u.NAME ?? u.text ?? id);
+    return `<option value="${escHtml(id)}">${escHtml(nm)}</option>`;
+  }).join("");
 
-        <div style="grid-column:1 / -1">
-          <div style="font-size:11px;font-weight:900;margin-bottom:6px">OBS (opcional)</div>
-          <textarea id="ntObs" rows="4" style="width:100%;border-radius:14px;border:1px solid rgba(30,40,70,.16);padding:10px;font-weight:900;outline:none" placeholder="Observações..."></textarea>
-        </div>
+  const colabOptionsHtml = (allUsers || []).map((u) => {
+    const id = String(u.userId ?? u.id ?? u.ID ?? "");
+    const nm = String(u.name ?? u.NAME ?? u.fullName ?? id);
+    return `<option value="${escHtml(id)}">${escHtml(nm)}</option>`;
+  }).join("");
 
-        <div style="grid-column:1 / -1;display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
-          <button class="eqd-btn" data-action="modalClose">Cancelar</button>
-          <button class="eqd-btn eqd-btnPrimary" id="ntCreate">Criar</button>
+  openModal(`Nova tarefa — ${user.name}`, `
+    <div class="eqd-warn" id="ntWarn"></div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+
+      <!-- NOME DO NEGÓCIO -->
+      <div style="grid-column:1 / -1">
+        <div style="font-size:11px;font-weight:900;margin-bottom:6px">NOME DO NEGÓCIO</div>
+        <input id="ntNomeNegocio" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900"
+               placeholder="Ex.: UNIMED • JOÃO SILVA • COBRAR DOCS / REUNIÃO..." />
+      </div>
+
+      <!-- PRAZO -->
+      <div>
+        <div style="font-size:11px;font-weight:900;margin-bottom:6px">PRAZO (data e hora)</div>
+        <input id="ntPrazo" type="datetime-local" value="${localDefault}"
+               style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" />
+        <div style="font-size:11px;font-weight:900;opacity:.70;margin-top:6px">Para recorrência, este horário vira o horário padrão.</div>
+      </div>
+
+      <!-- ETAPA -->
+      <div>
+        <div style="font-size:11px;font-weight:900;margin-bottom:6px">ETAPA</div>
+        <select id="ntEtapa" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
+          ${stageOptionsHtml || `<option value="">(carregando...)</option>`}
+        </select>
+        <div style="font-size:11px;font-weight:900;opacity:.70;margin-top:6px">Por padrão: coluna da própria usuária.</div>
+      </div>
+
+      <!-- TIPO -->
+      <div>
+        <div style="font-size:11px;font-weight:900;margin-bottom:6px">TIPO DA TAREFA</div>
+        <select id="ntTipo" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
+          ${taskTypeOptionsHtml}
+        </select>
+      </div>
+
+      <!-- URGÊNCIA -->
+      <div>
+        <div style="font-size:11px;font-weight:900;margin-bottom:6px">URGÊNCIA</div>
+        <select id="ntUrg" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
+          ${urgencyOptionsHtml}
+        </select>
+      </div>
+
+      <!-- COLAB -->
+      <div style="grid-column:1 / -1">
+        <div style="font-size:11px;font-weight:900;margin-bottom:6px">COLAB (opcional)</div>
+        <select id="ntColab" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
+          <option value="">— Nenhum —</option>
+          ${colabOptionsHtml}
+        </select>
+      </div>
+
+      <!-- RECORRÊNCIA -->
+      <div style="grid-column:1 / -1">
+        <div style="font-size:11px;font-weight:900;margin-bottom:6px">RECORRÊNCIA</div>
+        <select id="ntRecType" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
+          <option value="NONE">Sem recorrência</option>
+          <option value="DAILY_BUSINESS">Diária (dias úteis)</option>
+          <option value="WEEKLY">Semanal (escolher dias)</option>
+          <option value="MONTHLY">Mensal (dia do mês)</option>
+          <option value="YEARLY">Anual (dia/mês)</option>
+        </select>
+      </div>
+
+      <div style="grid-column:1 / -1;display:none" id="ntWeeklyBox">
+        <div style="font-size:11px;font-weight:900;margin-bottom:6px">DIAS DA SEMANA</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;border:1px solid rgba(0,0,0,.10);padding:10px;border-radius:12px;background:rgba(255,255,255,.55)">
+          ${daysRow}
         </div>
       </div>
-    `, { wide: true });
 
-    const sel = document.getElementById("ntRecType");
-    const weeklyBox = document.getElementById("ntWeeklyBox");
-    const monthlyBox = document.getElementById("ntMonthlyBox");
-    const yearlyBox = document.getElementById("ntYearlyBox");
-    const warn = document.getElementById("ntWarn");
-    const btn = document.getElementById("ntCreate");
+      <div style="display:none" id="ntMonthlyBox">
+        <div style="font-size:11px;font-weight:900;margin-bottom:6px">DIA DO MÊS</div>
+        <input id="ntMonthDay" type="number" min="1" max="31" value="1"
+               style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" />
+      </div>
 
-    function refreshRecUI(){
-      const v = String(sel.value || "NONE");
-      weeklyBox.style.display = (v === "WEEKLY") ? "block" : "none";
-      monthlyBox.style.display = (v === "MONTHLY") ? "block" : "none";
-      yearlyBox.style.display = (v === "YEARLY") ? "block" : "none";
-    }
-    sel.onchange = refreshRecUI;
-    refreshRecUI();
+      <div style="display:none" id="ntYearlyBox">
+        <div style="font-size:11px;font-weight:900;margin-bottom:6px">DATA DO ANO</div>
+        <input id="ntYearMD" type="date"
+               style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" />
+        <div style="font-size:11px;font-weight:900;opacity:.70;margin-top:6px">Escolha qualquer ano — será salvo só o dia/mês.</div>
+      </div>
 
-    btn.onclick = async () => {
-      const lk = `ntCreate:${user.userId}`;
-      if (!lockTry(lk)) return;
+      <!-- OBS -->
+      <div style="grid-column:1 / -1">
+        <div style="font-size:11px;font-weight:900;margin-bottom:6px">OBS (opcional)</div>
+        <textarea id="ntObs" rows="4" style="width:100%;border-radius:14px;border:1px solid rgba(30,40,70,.16);padding:10px;font-weight:900;outline:none" placeholder="Observações..."></textarea>
+      </div>
 
-      try {
-        btn.disabled = true;
-        warn.style.display = "none";
-        warn.textContent = "";
+      <div style="grid-column:1 / -1;display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+        <button class="eqd-btn" data-action="modalClose">Cancelar</button>
+        <button class="eqd-btn eqd-btnPrimary" id="ntCreate">Criar</button>
+      </div>
+    </div>
+  `, { wide: true });
 
-        const title = String(document.getElementById("ntTitle").value || "").trim();
-        if (!title) throw new Error("Preencha o TÍTULO.");
+  const sel = document.getElementById("ntRecType");
+  const weeklyBox = document.getElementById("ntWeeklyBox");
+  const monthlyBox = document.getElementById("ntMonthlyBox");
+  const yearlyBox = document.getElementById("ntYearlyBox");
+  const warn = document.getElementById("ntWarn");
+  const btn = document.getElementById("ntCreate");
 
-        const prazoLocal = String(document.getElementById("ntPrazo").value || "").trim();
-        const prazoIso = localInputToIsoWithOffset(prazoLocal);
-        if (!prazoIso) throw new Error("Prazo inválido.");
+  const etapaSel = document.getElementById("ntEtapa");
 
-        const obs = String(document.getElementById("ntObs").value || "").trim();
+  function refreshRecUI(){
+    const v = String(sel.value || "NONE");
+    weeklyBox.style.display = (v === "WEEKLY") ? "block" : "none";
+    monthlyBox.style.display = (v === "MONTHLY") ? "block" : "none";
+    yearlyBox.style.display = (v === "YEARLY") ? "block" : "none";
+  }
+  sel.onchange = refreshRecUI;
+  refreshRecUI();
 
-        const recType = String(sel.value || "NONE");
-        const dt = new Date(prazoIso);
-        const hh = dt.getHours();
-        const mm = dt.getMinutes();
+  // Default ETAPA = coluna do usuário
+  (async () => {
+    try {
+      const stageIdDefault = await stageIdForUserName(user.name);
+      if (stageIdDefault && etapaSel) etapaSel.value = String(stageIdDefault);
+    } catch(_) {}
+  })();
 
-        setBusy("Criando…");
+  btn.onclick = async () => {
+    const lk = `ntCreate:${user.userId}`;
+    if (!lockTry(lk)) return;
 
-        if (recType === "NONE") {
-          // criar tarefa simples
-          const stageId = await stageIdForUserName(user.name);
-          if (!stageId) throw new Error(`Não encontrei a coluna ${user.name} na pipeline.`);
+    try {
+      btn.disabled = true;
+      warn.style.display = "none";
+      warn.textContent = "";
 
-          const fields = {
-            CATEGORY_ID: Number(CATEGORY_MAIN),
-            STAGE_ID: String(stageId),
-            TITLE: title,
-            ASSIGNED_BY_ID: Number(user.userId),
-            [UF_PRAZO]: prazoIso,
-          };
-          if (obs) fields[UF_OBS] = obs;
+      const nomeNegocio = String(document.getElementById("ntNomeNegocio").value || "").trim();
+      if (!nomeNegocio) throw new Error("Preencha o NOME DO NEGÓCIO.");
 
-          await bx("crm.deal.add", { fields });
-          closeModal();
-          await refreshData(true);
-          renderCurrentView();
-          return;
-        }
+      const prazoLocal = String(document.getElementById("ntPrazo").value || "").trim();
+      const prazoIso = localInputToIsoWithOffset(prazoLocal);
+      if (!prazoIso) throw new Error("Prazo inválido.");
 
-        // criar regra recorrente (salva no Bitrix)
-        const rule = {
-          id: makeRuleId(),
-          title,
-          type: recType,
-          hh, mm,
-          obs: obs || "",
-          createdAt: new Date().toISOString(),
+      const obs = String(document.getElementById("ntObs").value || "").trim();
+
+      const etapaId = String((document.getElementById("ntEtapa").value || "")).trim();
+      if (!etapaId) throw new Error("Selecione a ETAPA.");
+
+      const taskType = String((document.getElementById("ntTipo").value || "")).trim();
+      const urgency = String((document.getElementById("ntUrg").value || "")).trim();
+      const colabId = String((document.getElementById("ntColab").value || "")).trim(); // opcional
+
+      const recType = String(sel.value || "NONE");
+      const dt = new Date(prazoIso);
+      const hh = dt.getHours();
+      const mm = dt.getMinutes();
+
+      setBusy("Criando…");
+
+      if (recType === "NONE") {
+        // criar tarefa simples
+        const fields = {
+          CATEGORY_ID: Number(CATEGORY_MAIN),
+          STAGE_ID: String(etapaId),
+          TITLE: nomeNegocio,
+          ASSIGNED_BY_ID: Number(user.userId),
+          [UF_PRAZO]: prazoIso,
         };
 
-        if (recType === "WEEKLY") {
-          const dows = [...document.querySelectorAll(".ntDow:checked")].map((x) => Number(x.value));
-          if (!dows.length) throw new Error("Selecione ao menos 1 dia da semana.");
-          rule.weekDays = dows;
-        }
+        if (obs) fields[UF_OBS] = obs;
 
-        if (recType === "MONTHLY") {
-          const md = Number(document.getElementById("ntMonthDay").value || 0);
-          if (!(md >= 1 && md <= 31)) throw new Error("Dia do mês inválido.");
-          rule.monthDay = md;
-        }
+        // opcionais (só se existirem as constantes)
+        try { if (typeof UF_TIPO_TAREFA !== "undefined" && UF_TIPO_TAREFA) fields[UF_TIPO_TAREFA] = taskType; } catch(_) {}
+        try { if (typeof UF_URGENCIA !== "undefined" && UF_URGENCIA) fields[UF_URGENCIA] = urgency; } catch(_) {}
+        try { if (typeof UF_COLAB !== "undefined" && UF_COLAB && colabId) fields[UF_COLAB] = Number(colabId); } catch(_) {}
 
-        if (recType === "YEARLY") {
-          const v = String(document.getElementById("ntYearMD").value || "").trim();
-          const m = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-          if (!m) throw new Error("Escolha uma data válida no campo ANUAL.");
-          rule.yearMD = `${m[2]}-${m[3]}`; // MM-DD
-        }
-
-        // garantir regras carregadas e salvar
-        if (!STATE.recurRulesByUser || STATE.recurRulesByUser.size === 0) {
-          await loadRecurrenceConfigDeals();
-        }
-        await addRuleForUser(user.userId, rule);
-
+        await bx("crm.deal.add", { fields });
         closeModal();
-
-        // gerar instâncias (janela) imediatamente
-        await generateRecurringDealsWindow();
         await refreshData(true);
         renderCurrentView();
-      } catch (e) {
-        warn.style.display = "block";
-        warn.textContent = "Falha:\n" + (e.message || e);
-      } finally {
-        btn.disabled = false;
-        clearBusy();
-        lockRelease(lk);
+        return;
       }
-    };
-  }
 
-  function openRecurrenceManagerModalForUser(user) {
-    openModal(`Recorrências — ${user.name}`, `
-      <div class="eqd-warn" id="rmWarn"></div>
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:space-between">
-        <div style="font-size:12px;font-weight:950;opacity:.85">Gerenciar regras salvas no Bitrix (GET • RECORRÊNCIA).</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="eqd-btn" data-action="newTaskModal" data-userid="${user.userId}">+ Nova tarefa</button>
-          <button class="eqd-btn" data-action="modalClose">Fechar</button>
-        </div>
-      </div>
-      <div id="rmList" style="margin-top:12px;display:flex;flex-direction:column;gap:10px"></div>
-    `, { wide: true });
+      // criar regra recorrente (salva no Bitrix)
+      const rule = {
+        id: makeRuleId(),
+        title: nomeNegocio,
+        type: recType,
+        hh, mm,
+        obs: obs || "",
+        createdAt: new Date().toISOString(),
 
-    const warn = document.getElementById("rmWarn");
-    const list = document.getElementById("rmList");
+        // ✅ novos campos
+        stageId: String(etapaId),
+        taskType: taskType || "",
+        urgency: urgency || "",
+        colabId: colabId || "",
+      };
 
-    (async () => {
-      try {
-        setBusy("Carregando recorrências…");
+      if (recType === "WEEKLY") {
+        const dows = [...document.querySelectorAll(".ntDow:checked")].map((x) => Number(x.value));
+        if (!dows.length) throw new Error("Selecione ao menos 1 dia da semana.");
+        rule.weekDays = dows;
+      }
+
+      if (recType === "MONTHLY") {
+        const md = Number(document.getElementById("ntMonthDay").value || 0);
+        if (!(md >= 1 && md <= 31)) throw new Error("Dia do mês inválido.");
+        rule.monthDay = md;
+      }
+
+      if (recType === "YEARLY") {
+        const v = String(document.getElementById("ntYearMD").value || "").trim();
+        const m = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (!m) throw new Error("Escolha uma data válida no campo ANUAL.");
+        rule.yearMD = `${m[2]}-${m[3]}`; // MM-DD
+      }
+
+      // garantir regras carregadas e salvar
+      if (!STATE.recurRulesByUser || STATE.recurRulesByUser.size === 0) {
         await loadRecurrenceConfigDeals();
-        clearBusy();
-
-        const rules = STATE.recurRulesByUser.get(String(user.userId)) || [];
-        if (!rules.length) {
-          list.innerHTML = `<div class="eqd-empty">Nenhuma recorrência cadastrada.</div>`;
-          return;
-        }
-
-        const row = (r) => {
-          const type = String(r.type || "");
-          let desc = "";
-          if (type === "DAILY_BUSINESS") desc = "Diária (dias úteis)";
-          if (type === "WEEKLY") desc = "Semanal: " + (Array.isArray(r.weekDays) ? r.weekDays.map(dowNamePt).join(", ") : "—");
-          if (type === "MONTHLY") desc = "Mensal: dia " + String(r.monthDay || "—");
-          if (type === "YEARLY") desc = "Anual: " + String(r.yearMD || "—");
-          const time = `${String(r.hh ?? 9).padStart(2,"0")}:${String(r.mm ?? 0).padStart(2,"0")}`;
-
-          return `
-            <div class="eqd-card" style="--accent-rgb:90,140,255">
-              <div class="eqd-bar"></div>
-              <div class="eqd-inner">
-                <div style="display:flex;gap:10px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap">
-                  <div style="font-weight:950">${escHtml(String(r.title || ""))}</div>
-                  <div style="display:flex;gap:8px;flex-wrap:wrap">
-                    <button class="eqd-smallBtn eqd-smallBtnDanger" data-action="recurDelete" data-userid="${user.userId}" data-ruleid="${escHtml(r.id)}">Excluir regra</button>
-                  </div>
-                </div>
-                <div style="font-size:11px;font-weight:900;opacity:.80">Tipo: <strong>${escHtml(desc)}</strong> • Hora: <strong>${escHtml(time)}</strong></div>
-                ${r.obs ? `<div class="eqd-obsLine">OBS: ${escHtml(trunc(r.obs, 180))}</div>` : ``}
-                <div style="font-size:11px;font-weight:900;opacity:.65">ID: ${escHtml(r.id)}</div>
-              </div>
-            </div>
-          `;
-        };
-
-        list.innerHTML = rules.map(row).join("");
-      } catch (e) {
-        clearBusy();
-        warn.style.display = "block";
-        warn.textContent = "Falha:\n" + (e.message || e);
       }
-    })();
-  }
+      await addRuleForUser(user.userId, rule);
 
+      closeModal();
+
+      // gerar instâncias (janela) imediatamente
+      await generateRecurringDealsWindow();
+      await refreshData(true);
+      renderCurrentView();
+    } catch (e) {
+      warn.style.display = "block";
+      warn.textContent = "Falha:\n" + (e.message || e);
+    } finally {
+      btn.disabled = false;
+      clearBusy();
+      lockRelease(lk);
+    }
+  };
+}
+   
   // =========================
   // 19) LEADS MODAL (OBS via modal + busca preta + contadores + criar manual)
   // =========================
