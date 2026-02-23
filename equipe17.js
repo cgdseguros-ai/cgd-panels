@@ -1846,42 +1846,56 @@ function openNewTaskModalForUser(user, opts) {
   const localDefault = new Date(dt0.getTime() - dt0.getTimezoneOffset()*60000).toISOString().slice(0, 16);
 
   // ---------- fontes de opções (sem quebrar se não existir) ----------
-  // Usuários para COLAB
+  // Usuários para COLAB (apenas para sugerir/autocomplete, mas COLAB será TEXTO)
   const allUsers =
     (opts && Array.isArray(opts.users) && opts.users.length ? opts.users : null) ||
     (Array.isArray(STATE && STATE.users) ? STATE.users : null) ||
     (Array.isArray(STATE && STATE.usersList) ? STATE.usersList : null) ||
     [];
 
-  // Etapas (PIPELINE 17 / CATEGORY_MAIN)
-  // Se você já tem um cache de stages em algum lugar, pluga aqui.
-  const stages =
-    (opts && Array.isArray(opts.stages) && opts.stages.length ? opts.stages : null) ||
-    (Array.isArray(STATE && STATE.stages) ? STATE.stages : null) ||
-    [];
+  // ---------- helpers locais ----------
+  const $ = (id) => document.getElementById(id);
 
-  // Tipo da tarefa / Urgência (fallback seguro)
-  const taskTypes =
-    (opts && Array.isArray(opts.taskTypes) && opts.taskTypes.length ? opts.taskTypes : null) ||
-    (Array.isArray(STATE && STATE.taskTypes) ? STATE.taskTypes : null) ||
-    [
-      { id: "FOLLOWUP", name: "Follow-up" },
-      { id: "DOCS", name: "Documentos" },
-      { id: "REUNIAO", name: "Reunião" },
-      { id: "COBRANCA", name: "Cobrança" },
-      { id: "OUTRO", name: "Outro" },
-    ];
+  async function getDealUserfieldByName(fieldName) {
+    // Retorna objeto do userfield (inclui LIST se for enum) ou null
+    try {
+      const r = await bx("crm.deal.userfield.list", { filter: { FIELD_NAME: String(fieldName) } });
+      const arr = (r && (r.result || r)) || [];
+      const uf = Array.isArray(arr) ? arr[0] : null;
+      if (!uf) return null;
 
-  const urgencies =
-    (opts && Array.isArray(opts.urgencies) && opts.urgencies.length ? opts.urgencies : null) ||
-    (Array.isArray(STATE && STATE.urgencies) ? STATE.urgencies : null) ||
-    [
-      { id: "BAIXA", name: "Baixa" },
-      { id: "MEDIA", name: "Média" },
-      { id: "ALTA", name: "Alta" },
-    ];
+      // Em alguns Bitrix, list já vem com LIST; em outros precisa do .get pelo ID
+      if (uf.LIST && Array.isArray(uf.LIST) && uf.LIST.length) return uf;
 
-  // ---------- UI Recorrência ----------
+      const id = uf.ID || uf.Id || uf.id;
+      if (!id) return uf;
+
+      const g = await bx("crm.deal.userfield.get", { id });
+      const got = (g && (g.result || g)) || null;
+      return got || uf;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function fillSelectWithEnum(selectEl, ufObj, placeholder) {
+    if (!selectEl) return;
+    const list = (ufObj && ufObj.LIST && Array.isArray(ufObj.LIST)) ? ufObj.LIST : [];
+    const optsHtml = [
+      `<option value="">${escHtml(placeholder || "Selecione...")}</option>`,
+      ...list.map(it => {
+        const v = String(it.ID ?? it.VALUE ?? it.Id ?? "");
+        const t = String(it.VALUE ?? it.NAME ?? it.Value ?? it.Name ?? v);
+        return `<option value="${escHtml(v)}">${escHtml(t)}</option>`;
+      })
+    ].join("");
+    selectEl.innerHTML = optsHtml;
+  }
+
+  function getCheckedDows() {
+    return [...document.querySelectorAll(".ntDow:checked")].map(x => Number(x.value));
+  }
+
   const daysRow = [0,1,2,3,4,5,6].map((i) => {
     return `
       <label style="display:flex;gap:8px;align-items:center;font-size:12px;font-weight:950">
@@ -1891,87 +1905,72 @@ function openNewTaskModalForUser(user, opts) {
     `;
   }).join("");
 
-  // ---------- opções HTML ----------
-  const stageOptionsHtml = (stages || []).map((s) => {
-    const sid = String(s.id ?? s.ID ?? s.value ?? "");
-    const sn = String(s.name ?? s.NAME ?? s.text ?? sid);
-    return `<option value="${escHtml(sid)}">${escHtml(sn)}</option>`;
-  }).join("");
-
-  const taskTypeOptionsHtml = (taskTypes || []).map((t) => {
-    const id = String(t.id ?? t.ID ?? t.value ?? "");
-    const nm = String(t.name ?? t.NAME ?? t.text ?? id);
-    return `<option value="${escHtml(id)}">${escHtml(nm)}</option>`;
-  }).join("");
-
-  const urgencyOptionsHtml = (urgencies || []).map((u) => {
-    const id = String(u.id ?? u.ID ?? u.value ?? "");
-    const nm = String(u.name ?? u.NAME ?? u.text ?? id);
-    return `<option value="${escHtml(id)}">${escHtml(nm)}</option>`;
-  }).join("");
-
-  const colabOptionsHtml = (allUsers || []).map((u) => {
-    const id = String(u.userId ?? u.id ?? u.ID ?? "");
-    const nm = String(u.name ?? u.NAME ?? u.fullName ?? id);
-    return `<option value="${escHtml(id)}">${escHtml(nm)}</option>`;
-  }).join("");
-
+  // ---------- UI ----------
   openModal(`Nova tarefa — ${user.name}`, `
     <div class="eqd-warn" id="ntWarn"></div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
 
-      <!-- NOME DO NEGÓCIO -->
       <div style="grid-column:1 / -1">
         <div style="font-size:11px;font-weight:900;margin-bottom:6px">NOME DO NEGÓCIO</div>
-        <input id="ntNomeNegocio" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900"
-               placeholder="Ex.: UNIMED • JOÃO SILVA • COBRAR DOCS / REUNIÃO..." />
+        <input id="ntTitle" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900"
+               placeholder="Ex.: LIGAR PARA JOÃO / COBRAR DOCUMENTOS / REUNIÃO..." />
       </div>
 
-      <!-- PRAZO -->
+      <div style="grid-column:1 / -1">
+        <div style="font-size:11px;font-weight:900;margin-bottom:6px">OBSERVAÇÕES (opcional)</div>
+        <textarea id="ntObs" rows="3" style="width:100%;border-radius:14px;border:1px solid rgba(30,40,70,.16);padding:10px;font-weight:900;outline:none"
+          placeholder="Observações..."></textarea>
+      </div>
+
       <div>
         <div style="font-size:11px;font-weight:900;margin-bottom:6px">PRAZO (data e hora)</div>
         <input id="ntPrazo" type="datetime-local" value="${localDefault}"
                style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" />
-        <div style="font-size:11px;font-weight:900;opacity:.70;margin-top:6px">Para recorrência, este horário vira o horário padrão.</div>
+        <div style="font-size:11px;font-weight:900;opacity:.70;margin-top:6px">Para recorrência, este horário vira o padrão.</div>
       </div>
 
-      <!-- ETAPA -->
       <div>
         <div style="font-size:11px;font-weight:900;margin-bottom:6px">ETAPA</div>
-        <select id="ntEtapa" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
-          ${stageOptionsHtml || `<option value="">(carregando...)</option>`}
+        <select id="ntEtapa"
+          style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
+          <option value="">Carregando...</option>
         </select>
-        <div style="font-size:11px;font-weight:900;opacity:.70;margin-top:6px">Por padrão: coluna da própria usuária.</div>
       </div>
 
-      <!-- TIPO -->
       <div>
         <div style="font-size:11px;font-weight:900;margin-bottom:6px">TIPO DA TAREFA</div>
-        <select id="ntTipo" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
-          ${taskTypeOptionsHtml}
+        <select id="ntTipo"
+          style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
+          <option value="">Carregando...</option>
         </select>
       </div>
 
-      <!-- URGÊNCIA -->
       <div>
         <div style="font-size:11px;font-weight:900;margin-bottom:6px">URGÊNCIA</div>
-        <select id="ntUrg" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
-          ${urgencyOptionsHtml}
+        <select id="ntUrg"
+          style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
+          <option value="">Carregando...</option>
         </select>
       </div>
 
-      <!-- COLAB -->
       <div style="grid-column:1 / -1">
-        <div style="font-size:11px;font-weight:900;margin-bottom:6px">COLAB (opcional)</div>
-        <select id="ntColab" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
-          <option value="">— Nenhum —</option>
-          ${colabOptionsHtml}
-        </select>
+        <div style="font-size:11px;font-weight:900;margin-bottom:6px">COLAB (opcional) — TEXTO</div>
+        <input id="ntColabTxt"
+          style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900"
+          placeholder="Ex.: Manuela / Andreyna / Fulano..." list="ntColabDatalist" />
+        <datalist id="ntColabDatalist">
+          ${
+            (allUsers || []).map(u=>{
+              const name = String(u.name || u.NAME || u.fullName || u.FULL_NAME || "").trim();
+              return name ? `<option value="${escHtml(name)}"></option>` : "";
+            }).join("")
+          }
+        </datalist>
+        <div style="font-size:11px;font-weight:900;opacity:.70;margin-top:6px">Este campo grava texto em ${escHtml("UF_CRM_1770327799")}.</div>
       </div>
 
-      <!-- RECORRÊNCIA -->
-      <div style="grid-column:1 / -1">
+      <div>
         <div style="font-size:11px;font-weight:900;margin-bottom:6px">RECORRÊNCIA</div>
         <select id="ntRecType" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
           <option value="NONE">Sem recorrência</option>
@@ -1982,7 +1981,7 @@ function openNewTaskModalForUser(user, opts) {
         </select>
       </div>
 
-      <div style="grid-column:1 / -1;display:none" id="ntWeeklyBox">
+      <div style="display:none" id="ntWeeklyBox">
         <div style="font-size:11px;font-weight:900;margin-bottom:6px">DIAS DA SEMANA</div>
         <div style="display:flex;gap:12px;flex-wrap:wrap;border:1px solid rgba(0,0,0,.10);padding:10px;border-radius:12px;background:rgba(255,255,255,.55)">
           ${daysRow}
@@ -1999,48 +1998,59 @@ function openNewTaskModalForUser(user, opts) {
         <div style="font-size:11px;font-weight:900;margin-bottom:6px">DATA DO ANO</div>
         <input id="ntYearMD" type="date"
                style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" />
-        <div style="font-size:11px;font-weight:900;opacity:.70;margin-top:6px">Escolha qualquer ano — será salvo só o dia/mês.</div>
+        <div style="font-size:11px;font-weight:900;opacity:.70;margin-top:6px">Escolha qualquer ano — salvamos só dia/mês.</div>
       </div>
 
-      <!-- OBS -->
-      <div style="grid-column:1 / -1">
-        <div style="font-size:11px;font-weight:900;margin-bottom:6px">OBS (opcional)</div>
-        <textarea id="ntObs" rows="4" style="width:100%;border-radius:14px;border:1px solid rgba(30,40,70,.16);padding:10px;font-weight:900;outline:none" placeholder="Observações..."></textarea>
-      </div>
-
-      <div style="grid-column:1 / -1;display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+      <div style="grid-column:1 / -1;display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-top:6px">
         <button class="eqd-btn" data-action="modalClose">Cancelar</button>
         <button class="eqd-btn eqd-btnPrimary" id="ntCreate">Criar</button>
       </div>
     </div>
   `, { wide: true });
 
-  const sel = document.getElementById("ntRecType");
-  const weeklyBox = document.getElementById("ntWeeklyBox");
-  const monthlyBox = document.getElementById("ntMonthlyBox");
-  const yearlyBox = document.getElementById("ntYearlyBox");
-  const warn = document.getElementById("ntWarn");
-  const btn = document.getElementById("ntCreate");
+  const selRec = $("ntRecType");
+  const weeklyBox = $("ntWeeklyBox");
+  const monthlyBox = $("ntMonthlyBox");
+  const yearlyBox = $("ntYearlyBox");
+  const warn = $("ntWarn");
+  const btn = $("ntCreate");
 
-  const etapaSel = document.getElementById("ntEtapa");
-
-  function refreshRecUI(){
-    const v = String(sel.value || "NONE");
+  function refreshRecUI() {
+    const v = String(selRec.value || "NONE");
     weeklyBox.style.display = (v === "WEEKLY") ? "block" : "none";
     monthlyBox.style.display = (v === "MONTHLY") ? "block" : "none";
     yearlyBox.style.display = (v === "YEARLY") ? "block" : "none";
   }
-  sel.onchange = refreshRecUI;
+  selRec.onchange = refreshRecUI;
   refreshRecUI();
 
-  // Default ETAPA = coluna do usuário
+  // ---------- carregar listas (ETAPA / TIPO / URGÊNCIA) ----------
   (async () => {
     try {
-      const stageIdDefault = await stageIdForUserName(user.name);
-      if (stageIdDefault && etapaSel) etapaSel.value = String(stageIdDefault);
-    } catch(_) {}
+      // ETAPA (UF_CRM_1768179977089)
+      const ufEtapa = await getDealUserfieldByName("UF_CRM_1768179977089");
+      if (ufEtapa && ufEtapa.LIST) fillSelectWithEnum($("ntEtapa"), ufEtapa, "Selecione a etapa...");
+      else $("ntEtapa").innerHTML = `<option value="">(sem lista)</option>`;
+
+      // TIPO DA TAREFA (UF_CRM_1768185018696)
+      const ufTipo = await getDealUserfieldByName("UF_CRM_1768185018696");
+      if (ufTipo && ufTipo.LIST) fillSelectWithEnum($("ntTipo"), ufTipo, "Selecione o tipo...");
+      else $("ntTipo").innerHTML = `<option value="">(sem lista)</option>`;
+
+      // URGÊNCIA (UF_CRM_1768174982)
+      const ufUrg = await getDealUserfieldByName("UF_CRM_1768174982");
+      if (ufUrg && ufUrg.LIST) fillSelectWithEnum($("ntUrg"), ufUrg, "Selecione a urgência...");
+      else $("ntUrg").innerHTML = `<option value="">(sem lista)</option>`;
+    } catch (e) {
+      try {
+        $("ntEtapa").innerHTML = `<option value="">(falha ao carregar)</option>`;
+        $("ntTipo").innerHTML = `<option value="">(falha ao carregar)</option>`;
+        $("ntUrg").innerHTML = `<option value="">(falha ao carregar)</option>`;
+      } catch(_){}
+    }
   })();
 
+  // ---------- criação ----------
   btn.onclick = async () => {
     const lk = `ntCreate:${user.userId}`;
     if (!lockTry(lk)) return;
@@ -2050,23 +2060,27 @@ function openNewTaskModalForUser(user, opts) {
       warn.style.display = "none";
       warn.textContent = "";
 
-      const nomeNegocio = String(document.getElementById("ntNomeNegocio").value || "").trim();
+      const nomeNegocio = String($("ntTitle").value || "").trim();
       if (!nomeNegocio) throw new Error("Preencha o NOME DO NEGÓCIO.");
 
-      const prazoLocal = String(document.getElementById("ntPrazo").value || "").trim();
+      const obs = String($("ntObs").value || "").trim();
+
+      const prazoLocal = String($("ntPrazo").value || "").trim();
       const prazoIso = localInputToIsoWithOffset(prazoLocal);
       if (!prazoIso) throw new Error("Prazo inválido.");
 
-      const obs = String(document.getElementById("ntObs").value || "").trim();
+      // Campos adicionais
+      const etapaVal = String($("ntEtapa").value || "").trim(); // enum id
+      if (!etapaVal) throw new Error("Selecione a ETAPA.");
 
-      const etapaId = String((document.getElementById("ntEtapa").value || "")).trim();
-      if (!etapaId) throw new Error("Selecione a ETAPA.");
+      const taskType = String($("ntTipo").value || "").trim();  // enum id (opcional)
+      const urgency  = String($("ntUrg").value || "").trim();   // enum id (opcional)
 
-      const taskType = String((document.getElementById("ntTipo").value || "")).trim();
-      const urgency = String((document.getElementById("ntUrg").value || "")).trim();
-      const colabId = String((document.getElementById("ntColab").value || "")).trim(); // opcional
+      // COLAB texto
+      const colabTxt = String($("ntColabTxt").value || "").trim();
 
-      const recType = String(sel.value || "NONE");
+      const recType = String(selRec.value || "NONE");
+
       const dt = new Date(prazoIso);
       const hh = dt.getHours();
       const mm = dt.getMinutes();
@@ -2077,18 +2091,21 @@ function openNewTaskModalForUser(user, opts) {
         // criar tarefa simples
         const fields = {
           CATEGORY_ID: Number(CATEGORY_MAIN),
-          STAGE_ID: String(etapaId),
+          STAGE_ID: String(etapaVal),                 // etapa selecionada (enum)
           TITLE: nomeNegocio,
           ASSIGNED_BY_ID: Number(user.userId),
           [UF_PRAZO]: prazoIso,
+          UF_CRM_1768179977089: etapaVal,             // mantém também no UF (se você usa o UF)
         };
 
         if (obs) fields[UF_OBS] = obs;
 
-        // opcionais (só se existirem as constantes)
-        try { if (typeof UF_TIPO_TAREFA !== "undefined" && UF_TIPO_TAREFA) fields[UF_TIPO_TAREFA] = taskType; } catch(_) {}
-        try { if (typeof UF_URGENCIA !== "undefined" && UF_URGENCIA) fields[UF_URGENCIA] = urgency; } catch(_) {}
-        try { if (typeof UF_COLAB !== "undefined" && UF_COLAB && colabId) fields[UF_COLAB] = Number(colabId); } catch(_) {}
+        // Tipo de tarefa / Urgência (se selecionado)
+        if (taskType) fields["UF_CRM_1768185018696"] = taskType;
+        if (urgency)  fields["UF_CRM_1768174982"] = urgency;
+
+        // COLAB texto
+        if (colabTxt) fields["UF_CRM_1770327799"] = colabTxt;
 
         await bx("crm.deal.add", { fields });
         closeModal();
@@ -2106,27 +2123,27 @@ function openNewTaskModalForUser(user, opts) {
         obs: obs || "",
         createdAt: new Date().toISOString(),
 
-        // ✅ novos campos
-        stageId: String(etapaId),
+        // novos campos (para instâncias)
+        etapa: etapaVal,
         taskType: taskType || "",
         urgency: urgency || "",
-        colabId: colabId || "",
+        colabText: colabTxt || "",
       };
 
       if (recType === "WEEKLY") {
-        const dows = [...document.querySelectorAll(".ntDow:checked")].map((x) => Number(x.value));
+        const dows = getCheckedDows();
         if (!dows.length) throw new Error("Selecione ao menos 1 dia da semana.");
         rule.weekDays = dows;
       }
 
       if (recType === "MONTHLY") {
-        const md = Number(document.getElementById("ntMonthDay").value || 0);
+        const md = Number($("ntMonthDay").value || 0);
         if (!(md >= 1 && md <= 31)) throw new Error("Dia do mês inválido.");
         rule.monthDay = md;
       }
 
       if (recType === "YEARLY") {
-        const v = String(document.getElementById("ntYearMD").value || "").trim();
+        const v = String($("ntYearMD").value || "").trim();
         const m = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
         if (!m) throw new Error("Escolha uma data válida no campo ANUAL.");
         rule.yearMD = `${m[2]}-${m[3]}`; // MM-DD
@@ -2144,6 +2161,7 @@ function openNewTaskModalForUser(user, opts) {
       await generateRecurringDealsWindow();
       await refreshData(true);
       renderCurrentView();
+
     } catch (e) {
       warn.style.display = "block";
       warn.textContent = "Falha:\n" + (e.message || e);
