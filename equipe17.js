@@ -24,29 +24,29 @@
   const CATEGORY_MAIN = 17;
 
   const USERS = [
-    { name: "Manuela", userId: 813, team: "DELTA" },
-    { name: "Maria Clara", userId: 841, team: "DELTA" },
-    { name: "Beatriz", userId: 3387, team: "DELTA" },
-    { name: "Bruna Luisa", userId: 3081, team: "DELTA" },
+  { name: "Manuela", userId: 813, team: "DELTA" },
+  { name: "Maria Clara", userId: 841, team: "DELTA" },
+  { name: "Beatriz", userId: 3387, team: "DELTA" },
+  { name: "Bruna Luisa", userId: 3081, team: "DELTA" },
 
-    { name: "Aline", userId: 15, team: "ALPHA" },
-    { name: "Adriana", userId: 19, team: "ALPHA" },
-    { name: "Andreyna", userId: 17, team: "ALPHA" },
-    { name: "Mariana", userId: 23, team: "ALPHA" },
-    { name: "Josiane", userId: 811, team: "ALPHA" },
+  { name: "Aline", userId: 15, team: "ALPHA" },
+  { name: "Adriana", userId: 19, team: "ALPHA" },
+  { name: "Andreyna", userId: 17, team: "ALPHA" },
+  { name: "Mariana", userId: 23, team: "ALPHA" },
+  { name: "Josiane", userId: 811, team: "ALPHA" },
 
-    { name: "Livia Alves", userId: 3079, team: "BETA" },
-    { name: "Fernanda Silva", userId: 3083, team: "BETA" },
-    { name: "Nicolle Belmonte", userId: 3085, team: "BETA" },
-    { name: "Anna Clara", userId: 3389, team: "BETA" },
+  { name: "Livia Alves", userId: 3079, team: "BETA" },
+  { name: "Fernanda Silva", userId: 3083, team: "BETA" },
+  { name: "Nicolle Belmonte", userId: 3085, team: "BETA" },
+  { name: "Anna Clara", userId: 3389, team: "BETA" },
 
-    // ✅ EQUIPE ÔMEGA
-    { name: "Gabriel", userId: 815, team: "ÔMEGA" },
-    { name: "Amanda", userId: 269, team: "ÔMEGA" },
-    { name: "Talita", userId: 29, team: "ÔMEGA" },
-    { name: "Vivian", userId: 3101, team: "ÔMEGA" },
-  ];
-
+  // ✅ EQUIPE ÔMEGA
+  { name: "Gabriel", userId: 815, team: "ÔMEGA" },
+  { name: "Amanda", userId: 269, team: "ÔMEGA" },
+  { name: "Talita", userId: 29, team: "ÔMEGA" },
+  { name: "Vivian", userId: 3101, team: "ÔMEGA" },
+];
+   
   const LEAD_USERS = new Set(["15", "19", "17", "23", "811", "3081", "3079", "3083", "3085", "3389"]);
   const SEGUROS_USERS = new Set(["815", "269", "29", "3101"]);
 
@@ -1444,19 +1444,1430 @@
   }
 
   // =========================
-  // 17..26) (mantido igual ao seu trecho)
-  //    - FOLLOW-UP, Lista, Leads Sticky, Transferir lead, Painéis, Multi, Done/Edit/Delete, Lote, Click handler, Top buttons
+  // 17) FOLLOW-UP (deal)
   // =========================
-  // ✅ AQUI entra TODO O SEU TRECHO exatamente como você colou (já está acima na conversa).
-  // Para manter esta resposta utilizável, eu não vou duplicar o miolo inteiro aqui de novo,
-  // então abaixo estou fechando APENAS o final que ficou truncado no seu paste: REFRESH + INIT.
-  //
-  // >>>> ATENÇÃO:
-  // Cole o arquivo inteiro que você já tem + substitua somente o bloco final (INIT) pelo bloco abaixo.
-  //
-  // Se você quiser que eu devolva o arquivo 100% inteiro numa única peça,
-  // me mande o RAW do equipe17.js atual do GitHub (ou confirme se este paste é 100% completo até o item 29).
+  async function createFollowUpDealForUser(user, negocioNome, prazoIso) {
+    const [urgMap, tipoMap, etapaMap] = await Promise.all([enums(UF_URGENCIA), enums(UF_TAREFA), enums(UF_ETAPA)]);
+    const followTipoId = findEnumIdByLabel(tipoMap, norm("FOLLOW-UP"));
+    const aguardEtapaId = findEnumIdByLabel(etapaMap, norm("AGUARDANDO"));
+    const normalUrgId = findEnumIdByLabel(urgMap, norm("NORMAL")) || findEnumIdByLabel(urgMap, norm("PADRAO")) || "";
+
+    const stageId = await stageIdForUserName(user.name);
+    if (!stageId) throw new Error(`Não encontrei a coluna ${user.name} na pipeline.`);
+
+    const fields = {
+      CATEGORY_ID: Number(CATEGORY_MAIN),
+      STAGE_ID: String(stageId),
+      TITLE: `FOLLOW-UP ${negocioNome}`,
+      ASSIGNED_BY_ID: Number(user.userId),
+    };
+
+    if (prazoIso) fields[UF_PRAZO] = prazoIso;
+    if (normalUrgId) fields[UF_URGENCIA] = normalUrgId;
+    if (followTipoId) fields[UF_TAREFA] = followTipoId;
+    if (aguardEtapaId) fields[UF_ETAPA] = aguardEtapaId;
+
+    await bx("crm.deal.add", { fields });
+  }
+
+  function openFollowUpModal(user, prefillName, opts) {
+    const dt = new Date();
+    dt.setMinutes(dt.getMinutes() + 60);
+    const localDefault = new Date(dt.getTime() - dt.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+
+    openModal(`FOLLOW-UP — ${user.name}`, `
+      <div class="eqd-warn" id="fuWarn"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div style="grid-column:1 / -1">
+          <div style="font-size:11px;font-weight:900;margin-bottom:6px">NOME DO NEGÓCIO</div>
+          <input id="fuNome" value="${escHtml(prefillName || "")}"
+                 style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16)" placeholder="Ex.: JOÃO SILVA" />
+        </div>
+        <div style="grid-column:1 / -1">
+          <div style="font-size:11px;font-weight:900;margin-bottom:6px">PRAZO (dia e hora)</div>
+          <input id="fuPrazo" type="datetime-local" value="${localDefault}"
+                 style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16)" />
+        </div>
+        <div style="grid-column:1 / -1;display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-top:6px">
+          <button class="eqd-btn" data-action="modalClose">Cancelar</button>
+          <button class="eqd-btn eqd-btnPrimary" id="fuCreate">Criar FOLLOW-UP</button>
+        </div>
+      </div>
+    `, { modalType: "OTHER", wide: true });
+
+    const warn = document.getElementById("fuWarn");
+    const btn = document.getElementById("fuCreate");
+
+    btn.onclick = async () => {
+      const lk = `fuCreate:${user.userId}`;
+      if (!lockTry(lk)) return;
+      try {
+        btn.disabled = true;
+        warn.style.display = "none";
+        warn.textContent = "";
+        const nm = String(document.getElementById("fuNome").value || "").trim();
+        if (!nm) throw new Error("Preencha o NOME DO NEGÓCIO.");
+        const prazoLocal = String(document.getElementById("fuPrazo").value || "").trim();
+        const prazoIso = localInputToIsoWithOffset(prazoLocal);
+        if (!prazoIso) throw new Error("Prazo inválido.");
+
+        setBusy("Criando follow-up…");
+        await createFollowUpDealForUser(user, nm, prazoIso);
+
+        // ✅ volta pro LEADS se necessário
+        await refreshData(true);
+        clearBusy();
+
+        if (opts && opts.returnToLeads) {
+          closeModal();
+          setLeadsCtx(opts.returnToLeads.userId, opts.returnToLeads.kw || "");
+          return reopenLeadsModalSafe();
+        }
+
+        closeModal();
+        renderCurrentView();
+      } catch (e) {
+        warn.style.display = "block";
+        warn.textContent = "Falha:\n" + (e.message || e);
+      } finally {
+        btn.disabled = false;
+        clearBusy();
+        lockRelease(lk);
+      }
+    };
+  }
+
   // =========================
+  // 18) LISTA DE FOLLOW-UP
+  // =========================
+  function isFollowupDeal(d) {
+    const t = norm(d._tarefaTxt || "");
+    if (t.includes(norm("FOLLOW-UP"))) return true;
+    const title = norm(d.TITLE || "");
+    return title.startsWith(norm("FOLLOW-UP"));
+  }
+
+  function openFollowupListModalForUser(user) {
+    const all = (STATE.dealsAll || []).filter((d) => String(d.ASSIGNED_BY_ID || d._assigned || "") === String(user.userId));
+    const listAll = all.filter(isFollowupDeal);
+
+    const from = new Date(Date.now() - 1000*60*60*24*10).getTime();
+    const list = listAll.filter((d) => {
+      if (!d._prazo) return false;
+      const t = new Date(d._prazo).getTime();
+      return Number.isFinite(t) && t >= from;
+    });
+
+    const body = `
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:space-between">
+        <div style="font-size:12px;font-weight:950;opacity:.85">Total: <strong>${list.length}</strong></div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input id="fuListSearch" class="eqd-searchInput" style="width:min(520px,70vw);color:#111;background:#fff;border-color:rgba(0,0,0,.18)" placeholder="Pesquisar follow-up..." />
+          <button class="eqd-btn eqd-btnPrimary" id="fuListBtn">Buscar</button>
+          <button class="eqd-btn" id="fuListClear">Limpar</button>
+        </div>
+      </div>
+      <div id="fuListBox" style="margin-top:10px;display:flex;flex-direction:column;gap:8px"></div>
+    `;
+    openModal(`Lista de FOLLOW-UP — ${user.name}`, body, { wide: true, modalType: "OTHER" });
+
+    const box = document.getElementById("fuListBox");
+    const render = (kwRaw) => {
+      const kw = norm(String(kwRaw || "").trim());
+      const filtered = kw
+        ? list.filter((d) => norm([d.TITLE || "", d._obs || "", d._colabTxt || "", d._etapaTxt || "", d._urgTxt || ""].join(" ")).includes(kw))
+        : list.slice();
+
+      const ordered = sortDeals(filtered);
+      box.innerHTML = ordered.length ? ordered.map((d) => makeDealCard(d, { allowBatch: false })).join("") : `<div class="eqd-empty">Nenhum follow-up.</div>`;
+    };
+
+    render("");
+
+    document.getElementById("fuListBtn").onclick = () => render(document.getElementById("fuListSearch").value);
+    document.getElementById("fuListSearch").onkeydown = (e) => { if (e.key === "Enter") render(e.target.value); };
+    document.getElementById("fuListClear").onclick = () => { document.getElementById("fuListSearch").value = ""; render(""); };
+  }
+
+  // =========================
+  // 19) LEADS MODAL (STICKY + TRANSFERIR)
+  // =========================
+  function leadMatchesKw(l, kwNorm) {
+    if (!kwNorm) return true;
+    const blob = norm([leadTitle(l), leadOperadora(l), leadTelefone(l), leadBairro(l), leadFonte(l), leadDataHora(l), leadObs(l)].join(" "));
+    return blob.includes(kwNorm);
+  }
+
+  function openLeadObsModal(userId, leadId) {
+    const leads = STATE.leadsByUser.get(String(userId)) || [];
+    const lead = leads.find((l) => String(l.ID) === String(leadId));
+    if (!lead) return;
+
+    const cur = leadObs(lead);
+
+    openModal(`OBS — Lead`, `
+      <div class="eqd-warn" id="lobWarn"></div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="font-size:12px;font-weight:950;opacity:.85">${escHtml(leadTitle(lead))}</div>
+        <textarea id="lobText" rows="7" style="width:100%;border-radius:14px;border:1px solid rgba(30,40,70,.16);padding:10px;font-weight:850;outline:none">${escHtml(cur)}</textarea>
+        <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+          <button class="eqd-btn" data-action="modalClose">Cancelar</button>
+          <button class="eqd-btn eqd-btnPrimary" id="lobSave">Salvar</button>
+        </div>
+      </div>
+    `, { modalType: "OTHER", wide: true });
+
+    const warn = document.getElementById("lobWarn");
+    const btn = document.getElementById("lobSave");
+
+    btn.onclick = async () => {
+      const lk = `leadObsSave:${userId}:${leadId}`;
+      if (!lockTry(lk)) return;
+      try {
+        btn.disabled = true;
+        warn.style.display = "none";
+        const val = String(document.getElementById("lobText").value || "").trim();
+        setBusy("Salvando OBS do lead…");
+        await bx("crm.lead.update", { id: String(leadId), fields: { [LEAD_UF_OBS]: val } });
+        await loadLeadsForOneUser(userId);
+        clearBusy();
+        closeModal();
+        // ✅ SEMPRE volta pro modal LEADS
+        reopenLeadsModalSafe();
+      } catch (e) {
+        clearBusy();
+        warn.style.display = "block";
+        warn.textContent = "Falha:\n" + (e.message || e);
+      } finally {
+        btn.disabled = false;
+        lockRelease(lk);
+      }
+    };
+  }
+
+  // ✅ TRANSFERIR LEAD (modal)
+  function openLeadTransferModal(fromUserId, leadId){
+    const fromId = String(fromUserId || "");
+    const lid = String(leadId || "");
+    if(!fromId || !lid) return;
+
+    const eligible = USERS
+      .filter(u => LEAD_USERS.has(String(u.userId)))
+      .filter(u => String(u.userId) !== fromId);
+
+    if(!eligible.length) return alert("Nenhuma usuária disponível para transferência.");
+
+    const fromUser = USERS.find(u => String(u.userId) === fromId);
+
+    openModal(`TRANSFERIR LEAD`, `
+      <div class="eqd-warn" id="ltWarn"></div>
+
+      <div style="font-size:12px;font-weight:950;opacity:.85;margin-bottom:10px">
+        Origem: <strong>${escHtml(fromUser ? fromUser.name : ("USER "+fromId))}</strong>
+        • Lead ID: <strong>${escHtml(lid)}</strong>
+      </div>
+
+      <div style="font-size:11px;font-weight:900;margin-bottom:6px">Transferir para</div>
+      <select id="ltToUser" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
+        ${eligible.map(u => `<option value="${escHtml(String(u.userId))}">${escHtml(u.name)} (ID ${escHtml(String(u.userId))})</option>`).join("")}
+      </select>
+
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap">
+        <button class="eqd-btn" data-action="modalClose">Cancelar</button>
+        <button class="eqd-btn eqd-btnPrimary" id="ltConfirm">Transferir</button>
+      </div>
+    `, { modalType: "OTHER", wide: true });
+
+    const btn = document.getElementById("ltConfirm");
+    const warn = document.getElementById("ltWarn");
+
+    btn.onclick = async () => {
+      const toId = String((document.getElementById("ltToUser")||{}).value || "").trim();
+      if(!toId) return;
+
+      const lk = `leadTransfer:${fromId}:${lid}:${toId}`;
+      if(!lockTry(lk)) return;
+
+      try{
+        btn.disabled = true;
+        warn.style.display = "none";
+        warn.textContent = "";
+
+        setBusy("Transferindo lead…");
+        await bx("crm.lead.update", { id: String(lid), fields: { ASSIGNED_BY_ID: Number(toId) } });
+
+        await Promise.allSettled([ loadLeadsForOneUser(fromId), loadLeadsForOneUser(toId) ]);
+
+        clearBusy();
+        closeModal();
+        // ✅ volta pro LEADS (com mesmo filtro)
+        reopenLeadsModalSafe();
+
+      } catch(e){
+        clearBusy();
+        warn.style.display = "block";
+        warn.textContent = "Falha:\n" + (e.message || e);
+      } finally {
+        btn.disabled = false;
+        lockRelease(lk);
+      }
+    };
+  }
+
+  async function openManualLeadCreateModal(user, defaultStatusId) {
+    const now = new Date();
+    const localNow = new Date(now.getTime() - now.getTimezoneOffset()*60000).toISOString().slice(0,16);
+
+    const sAt = leadStageId("EM ATENDIMENTO");
+    const sAtendido = leadStageId("ATENDIDO");
+    const sQual = leadStageId("QUALIFICADO");
+
+    openModal(`Novo Lead — ${user.name}`, `
+      <div class="eqd-warn" id="nlWarn"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div style="grid-column:1 / -1">
+          <div style="font-size:11px;font-weight:900;margin-bottom:6px">ETAPA</div>
+          <select id="nlStatus" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
+            ${sAt ? `<option value="${escHtml(sAt)}" ${String(defaultStatusId||"")===String(sAt)?"selected":""}>EM ATENDIMENTO</option>` : ``}
+            ${sAtendido ? `<option value="${escHtml(sAtendido)}" ${String(defaultStatusId||"")===String(sAtendido)?"selected":""}>ATENDIDO</option>` : ``}
+            ${sQual ? `<option value="${escHtml(sQual)}" ${String(defaultStatusId||"")===String(sQual)?"selected":""}>QUALIFICADO</option>` : ``}
+          </select>
+        </div>
+
+        <div>
+          <div style="font-size:11px;font-weight:900;margin-bottom:6px">NOME</div>
+          <input id="nlName" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" placeholder="Ex.: JOÃO" />
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:900;margin-bottom:6px">SOBRENOME</div>
+          <input id="nlLast" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" placeholder="Ex.: SILVA" />
+        </div>
+
+        <div style="grid-column:1 / -1">
+          <div style="font-size:11px;font-weight:900;margin-bottom:6px">TÍTULO (opcional)</div>
+          <input id="nlTitle" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" placeholder="Ex.: PLANO UNIMED - JOÃO SILVA" />
+        </div>
+
+        <div>
+          <div style="font-size:11px;font-weight:900;margin-bottom:6px">OPERADORA</div>
+          <input id="nlOp" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" placeholder="Ex.: UNIMED" />
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:900;margin-bottom:6px">IDADE</div>
+          <input id="nlIdade" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" placeholder="Ex.: 66" />
+        </div>
+
+        <div>
+          <div style="font-size:11px;font-weight:900;margin-bottom:6px">TELEFONE</div>
+          <input id="nlTel" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" placeholder="Ex.: (21) 99999-9999" />
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:900;margin-bottom:6px">BAIRRO</div>
+          <input id="nlBairro" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" placeholder="Ex.: BARRA" />
+        </div>
+
+        <div>
+          <div style="font-size:11px;font-weight:900;margin-bottom:6px">FONTE</div>
+          <input id="nlFonte" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" placeholder="Ex.: GOOGLE ADS" />
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:900;margin-bottom:6px">DATA/HORA (UF)</div>
+          <input id="nlDh" type="datetime-local" value="${localNow}"
+            style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900" />
+        </div>
+
+        <div style="grid-column:1 / -1">
+          <div style="font-size:11px;font-weight:900;margin-bottom:6px">OBS</div>
+          <textarea id="nlObs" rows="5" style="width:100%;border-radius:14px;border:1px solid rgba(30,40,70,.16);padding:10px;font-weight:900;outline:none" placeholder="Observações..."></textarea>
+        </div>
+
+        <div style="grid-column:1 / -1;display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+          <button class="eqd-btn" data-action="modalClose">Cancelar</button>
+          <button class="eqd-btn eqd-btnPrimary" id="nlCreate">Criar Lead</button>
+        </div>
+      </div>
+    `, { wide: true, modalType: "OTHER" });
+
+    const warn = document.getElementById("nlWarn");
+    const btn = document.getElementById("nlCreate");
+
+    btn.onclick = async () => {
+      const lk = `leadCreate:${user.userId}`;
+      if (!lockTry(lk)) return;
+      try {
+        btn.disabled = true;
+        warn.style.display = "none";
+        warn.textContent = "";
+
+        const STATUS_ID = String(document.getElementById("nlStatus").value || "").trim();
+        if (!STATUS_ID) throw new Error("Selecione a ETAPA.");
+
+        const NAME = String(document.getElementById("nlName").value || "").trim();
+        const LAST_NAME = String(document.getElementById("nlLast").value || "").trim();
+        const TITLE = String(document.getElementById("nlTitle").value || "").trim();
+        const op = String(document.getElementById("nlOp").value || "").trim();
+        const idade = String(document.getElementById("nlIdade").value || "").trim();
+        const tel = String(document.getElementById("nlTel").value || "").trim();
+        const bairro = String(document.getElementById("nlBairro").value || "").trim();
+        const fonte = String(document.getElementById("nlFonte").value || "").trim();
+        const dhLocal = String(document.getElementById("nlDh").value || "").trim();
+        const dhIso = dhLocal ? localInputToIsoWithOffset(dhLocal) : "";
+        const obs = String(document.getElementById("nlObs").value || "").trim();
+
+        if (!NAME && !TITLE) throw new Error("Preencha pelo menos NOME ou TÍTULO.");
+
+        const fields = {
+          ASSIGNED_BY_ID: Number(user.userId),
+          STATUS_ID,
+        };
+        if (TITLE) fields.TITLE = TITLE;
+        if (NAME) fields.NAME = NAME;
+        if (LAST_NAME) fields.LAST_NAME = LAST_NAME;
+
+        if (op) fields[LEAD_UF_OPERADORA] = op;
+        if (idade) fields[LEAD_UF_IDADE] = idade;
+        if (tel) fields[LEAD_UF_TELEFONE] = tel;
+        if (bairro) fields[LEAD_UF_BAIRRO] = bairro;
+        if (fonte) fields[LEAD_UF_FONTE] = fonte;
+        if (dhIso) fields[LEAD_UF_DATAHORA] = dhIso;
+        if (obs) fields[LEAD_UF_OBS] = obs;
+
+        setBusy("Criando lead…");
+        await bx("crm.lead.add", { fields });
+        await loadLeadsForOneUser(user.userId);
+        clearBusy();
+        closeModal();
+        // ✅ volta pro LEADS
+        reopenLeadsModalSafe();
+      } catch (e) {
+        clearBusy();
+        warn.style.display = "block";
+        warn.textContent = "Falha:\n" + (e.message || e);
+      } finally {
+        btn.disabled = false;
+        lockRelease(lk);
+      }
+    };
+  }
+
+  async function openLeadsModalForUser(userId, kwRaw) {
+    const user = USERS.find((u) => String(u.userId) === String(userId));
+    if (!user) return;
+
+    // ✅ salva contexto do LEADS e marca modal como LEADS
+    setLeadsCtx(user.userId, String(kwRaw || ""));
+
+    setBusy("Carregando LEADS…");
+    const leadsUser = await loadLeadsForOneUser(user.userId).catch(() => []);
+    clearBusy();
+
+    STATE.leadsAlertUsers.delete(String(user.userId));
+
+    const sAt = leadStageId("EM ATENDIMENTO");
+    const sAtendido = leadStageId("ATENDIDO");
+    const sQual = leadStageId("QUALIFICADO");
+    const sPerdido = leadStageId("PERDIDO");
+    const sConv = leadStageId("CONVERTIDO");
+
+    const kw = norm(String(kwRaw || "").trim());
+    const filtered = kw ? leadsUser.filter((l) => leadMatchesKw(l, kw)) : leadsUser;
+
+    const at = sAt ? filtered.filter((l) => String(l.STATUS_ID) === String(sAt)) : [];
+    const ok = sAtendido ? filtered.filter((l) => String(l.STATUS_ID) === String(sAtendido)) : [];
+    const q = sQual ? filtered.filter((l) => String(l.STATUS_ID) === String(sQual)) : [];
+
+    openModal(`Leads — ${user.name}`, `
+      <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:space-between;align-items:center">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input id="leadSearch" class="eqd-searchInput"
+            style="width:min(720px,85vw);color:#111;background:#fff;border-color:rgba(0,0,0,.18)"
+            placeholder="Buscar lead por palavra (nome, operadora, tel, bairro, fonte, data/hora, etapa…)"
+            value="${escHtml(String(kwRaw || ""))}" />
+          <button class="eqd-btn eqd-btnPrimary" id="leadSearchBtn">Buscar</button>
+          <button class="eqd-btn" id="leadSearchClear">Limpar</button>
+        </div>
+
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button class="eqd-btn" id="leadNewBtn" data-action="leadNewManual" data-userid="${user.userId}">NOVO LEAD</button>
+          <button class="eqd-btn" data-action="modalClose">Fechar</button>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(3,minmax(380px,1fr));gap:12px;margin-top:10px">
+        <div class="panelCol">
+          <div class="panelColHead" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+            <span>EM ATENDIMENTO (<strong>${at.length}</strong>)</span>
+            <button class="eqd-btn" style="padding:6px 10px;font-size:11px" data-action="leadNewManual" data-userid="${user.userId}" data-defaultstatus="${escHtml(sAt||"")}">+ Criar</button>
+          </div>
+          <div class="panelColBody" id="ld_at"></div>
+        </div>
+
+        <div class="panelCol">
+          <div class="panelColHead" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+            <span>ATENDIDOS (<strong>${ok.length}</strong>)</span>
+            <button class="eqd-btn" style="padding:6px 10px;font-size:11px" data-action="leadNewManual" data-userid="${user.userId}" data-defaultstatus="${escHtml(sAtendido||"")}">+ Criar</button>
+          </div>
+          <div class="panelColBody" id="ld_ok"></div>
+        </div>
+
+        <div class="panelCol">
+          <div class="panelColHead" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+            <span>QUALIFICADO (<strong>${q.length}</strong>)</span>
+            <button class="eqd-btn" style="padding:6px 10px;font-size:11px" data-action="leadNewManual" data-userid="${user.userId}" data-defaultstatus="${escHtml(sQual||"")}">+ Criar</button>
+          </div>
+          <div class="panelColBody" id="ld_q"></div>
+        </div>
+      </div>
+    `, { full: true, modalType: "LEADS" });
+
+    function cardLead(l, column) {
+      const op = leadOperadora(l);
+      const idade = leadIdade(l);
+      const bairro = leadBairro(l);
+      const fonte = leadFonte(l);
+      const tel = leadTelefone(l);
+      const when = leadDataHora(l) ? fmt(leadDataHora(l)) : "—";
+      const stageName = leadStageNameById(l.STATUS_ID) || "";
+
+      const obs = leadObs(l);
+      const obsOn = !!String(obs||"").trim();
+      const obsChip = `<span class="leadObsChip ${obsOn ? "on" : "off"}" data-action="leadObsModal" data-leadid="${l.ID}" data-userid="${user.userId}">
+        OBS <b>${obsOn ? "•" : ""}</b>
+      </span>`;
+
+      const mkBtn = (label, action, toStatus) =>
+        `<button class="leadBtn ${toStatus === sPerdido ? "leadBtnD" : toStatus ? "leadBtnP" : ""}" data-action="${action}" data-leadid="${l.ID}" data-tostatus="${toStatus || ""}" data-userid="${user.userId}">${label}</button>`;
+
+      // ✅ TRANSFERIR (sempre no card)
+      const transferBtn = `<button class="leadBtn" data-action="leadTransferOpen" data-leadid="${l.ID}" data-userid="${user.userId}">TRANSFERIR</button>`;
+
+      let btns = "";
+      if (column === "AT") {
+        btns = `${mkBtn("ATENDIDO","leadMove",sAtendido)}${mkBtn("PERDIDO","leadMove",sPerdido)}${transferBtn}`;
+      } else if (column === "OK") {
+        btns = `${mkBtn("PERDIDO","leadMove",sPerdido)}${mkBtn("CONVERTIDO","leadMove",sConv)}
+                <button class="leadBtn" data-action="leadFollowupModal" data-leadid="${l.ID}" data-userid="${user.userId}">FOLLOW-UP</button>
+                ${transferBtn}`;
+      } else if (column === "Q") {
+        btns = `${mkBtn("PERDIDO","leadMove",sPerdido)}${mkBtn("CONVERTIDO","leadMove",sConv)}
+                <button class="leadBtn" data-action="leadFollowupModal" data-leadid="${l.ID}" data-userid="${user.userId}">FOLLOW-UP</button>
+                ${transferBtn}`;
+      }
+
+      return `
+        <div class="leadCard">
+          <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap">
+            <div class="leadTitle">${escHtml(leadTitle(l))}</div>
+            ${obsChip}
+          </div>
+
+          <div class="leadMeta">
+            ${op ? `<span>Operadora: <strong>${escHtml(op)}</strong></span>` : ``}
+            ${idade ? `<span>Idade: <strong>${escHtml(idade)}</strong></span>` : ``}
+            ${tel ? `<span>Telefone: <strong>${escHtml(tel)}</strong></span>` : ``}
+            ${bairro ? `<span>Bairro: <strong>${escHtml(bairro)}</strong></span>` : ``}
+            ${fonte ? `<span>Fonte: <strong>${escHtml(fonte)}</strong></span>` : ``}
+            <span>Data/Hora: <strong>${escHtml(when)}</strong></span>
+            ${stageName ? `<span>Etapa: <strong>${escHtml(stageName)}</strong></span>` : ``}
+          </div>
+
+          <div class="leadBtns">${btns}</div>
+        </div>
+      `;
+    }
+
+    document.getElementById("ld_at").innerHTML = at.length ? at.map((l) => cardLead(l, "AT")).join("") : `<div class="eqd-empty">Nenhum</div>`;
+    document.getElementById("ld_ok").innerHTML = ok.length ? ok.map((l) => cardLead(l, "OK")).join("") : `<div class="eqd-empty">Nenhum</div>`;
+    document.getElementById("ld_q").innerHTML = q.length ? q.map((l) => cardLead(l, "Q")).join("") : `<div class="eqd-empty">Nenhum</div>`;
+
+    document.getElementById("leadSearchBtn").onclick = () => openLeadsModalForUser(user.userId, String(document.getElementById("leadSearch").value || "").trim());
+    document.getElementById("leadSearch").onkeydown = (e) => { if (e.key === "Enter") openLeadsModalForUser(user.userId, String(e.target.value || "").trim()); };
+    document.getElementById("leadSearchClear").onclick = () => openLeadsModalForUser(user.userId, "");
+  }
+
+  // =========================
+  // 20) USER CARD STATS
+  // =========================
+  function overdueEmoji(overdueCount) {
+    if (overdueCount <= 0) return "🟢";
+    if (overdueCount === 2) return "🟠";
+    if (overdueCount === 3) return "🟣";
+    if (overdueCount >= 4) return "🔴";
+    return "🟠";
+  }
+
+  function countUserStats(userId) {
+    const id = String(userId);
+    const all = (STATE.dealsAll || []).filter((d) => String(d.ASSIGNED_BY_ID || d._assigned || "") === id);
+    const open = all.filter((d) => !(STATE.doneStageId && String(d.STAGE_ID) === String(STATE.doneStageId)));
+    const done = all.filter((d) => STATE.doneStageId && String(d.STAGE_ID) === String(STATE.doneStageId));
+
+    const ds = dayStart(selectedDate).getTime();
+    const de = dayEnd(selectedDate).getTime();
+
+    const dayOpenPlusLate = open.filter((d) => {
+      if (!d._prazo) return false;
+      const t = new Date(d._prazo).getTime();
+      if (!Number.isFinite(t)) return false;
+      return (t >= ds && t <= de) || t < ds;
+    });
+
+    const dayDone = done.filter((d) => {
+      if (!d._prazo) return false;
+      const t = new Date(d._prazo).getTime();
+      return Number.isFinite(t) && t >= ds && t <= de;
+    });
+
+    const overdue = open.filter((d) => d._late);
+    return { day: dayOpenPlusLate.length, doneDay: dayDone.length, overdue: overdue.length };
+  }
+
+  function makeUserCard(u) {
+    const photo = STATE.userPhotoById.get(Number(u.userId)) || "";
+    const stats = countUserStats(u.userId);
+    const emoji = overdueEmoji(stats.overdue);
+
+    return `
+      <div class="userCard" data-action="openUser" data-userid="${u.userId}">
+        <div class="userInfoLeft">
+          <div class="userName">${escHtml(u.name)}</div>
+          <div class="userTeam">Equipe ${escHtml(u.team || "")}</div>
+        </div>
+
+        <div class="userPhotoWrap">
+          <img class="userPhoto" src="${photo || ""}" alt="${escHtml(u.name)}" referrerpolicy="no-referrer"
+            onerror="try{this.onerror=null;this.src='';this.style.display='none'}catch(e){}" />
+        </div>
+
+        <div class="userRight">
+          <div class="userEmoji">${emoji}</div>
+          <div class="userLine">Hoje + atrasadas: <strong>${stats.day}</strong></div>
+          <div class="userLine">Concluídas (dia): <strong>${stats.doneDay}</strong></div>
+          <div class="userLine">Atrasadas: <strong>${stats.overdue}</strong></div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderGeneral() {
+    el.main.innerHTML = `
+      <div style="margin-bottom:10px;font-weight:950;opacity:.75">Dia selecionado: ${fmtDateOnly(selectedDate)}</div>
+      <div class="userGrid">
+        ${USERS.map(makeUserCard).join("")}
+      </div>
+    `;
+  }
+
+  // =========================
+  // 21) PAINEL INDIVIDUAL (igual ao seu)
+  // =========================
+  let currentView = { kind: "general", userId: null, multi: null };
+
+  function dealsOfSelectedDayPlusOverdueForUser(userId) {
+    const ds = dayStart(selectedDate).getTime();
+    const de = dayEnd(selectedDate).getTime();
+    return (STATE.dealsOpen || []).filter((d) => {
+      if (String(d.ASSIGNED_BY_ID || d._assigned || "") !== String(userId)) return false;
+      if (!d._prazo) return false;
+      const t = new Date(d._prazo).getTime();
+      if (!Number.isFinite(t)) return false;
+      return (t >= ds && t <= de) || t < ds;
+    });
+  }
+
+  function distributeInto3Cols(sortedDeals) {
+    const cols = [[], [], []];
+    for (let i = 0; i < sortedDeals.length; i++) cols[i % 3].push(sortedDeals[i]);
+    return cols;
+  }
+
+  function dealsForSpecialPanel(userId) {
+    const all = dealsOfSelectedDayPlusOverdueForUser(userId);
+    const ds = dayStart(selectedDate).getTime();
+    const de = dayEnd(selectedDate).getTime();
+
+    const follow = all.filter((d) => isFollowupDeal(d) && d._prazo && (new Date(d._prazo).getTime() >= ds && new Date(d._prazo).getTime() <= de));
+    const tasks = all.filter((d) => !isFollowupDeal(d));
+    return { tasks, follow };
+  }
+
+  function leadsAttendedOnSelectedDay(userId) {
+    const leads = STATE.leadsByUser.get(String(userId)) || [];
+    const sAtendido = leadStageId("ATENDIDO");
+    const ds = dayStart(selectedDate).getTime();
+    const de = dayEnd(selectedDate).getTime();
+
+    return (leads || []).filter((l) => {
+      if (!sAtendido) return false;
+      if (String(l.STATUS_ID) !== String(sAtendido)) return false;
+      const dt = tryParseDateAny(leadDataHora(l));
+      if (!dt) return false;
+      const t = dt.getTime();
+      return t >= ds && t <= de;
+    });
+  }
+
+  function renderLeadMiniCardForPanel(l) {
+    const op = leadOperadora(l);
+    const idade = leadIdade(l);
+    const tel = leadTelefone(l);
+    const bairro = leadBairro(l);
+    const fonte = leadFonte(l);
+    const when = leadDataHora(l) ? fmt(leadDataHora(l)) : "—";
+    const stageName = leadStageNameById(l.STATUS_ID) || "";
+
+    return `
+      <div class="leadCard">
+        <div class="leadTitle">${escHtml(leadTitle(l))}</div>
+        <div class="leadMeta">
+          ${op ? `<span>Operadora: <strong>${escHtml(op)}</strong></span>` : ``}
+          ${idade ? `<span>Idade: <strong>${escHtml(idade)}</strong></span>` : ``}
+          ${tel ? `<span>Telefone: <strong>${escHtml(tel)}</strong></span>` : ``}
+          ${bairro ? `<span>Bairro: <strong>${escHtml(bairro)}</strong></span>` : ``}
+          ${fonte ? `<span>Fonte: <strong>${escHtml(fonte)}</strong></span>` : ``}
+          <span>Data/Hora: <strong>${escHtml(when)}</strong></span>
+          ${stageName ? `<span>Etapa: <strong>${escHtml(stageName)}</strong></span>` : ``}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderUserPanel(userId) {
+    const user = USERS.find((u) => Number(u.userId) === Number(userId));
+    if (!user) return renderGeneral();
+
+    const photo = STATE.userPhotoById.get(Number(user.userId)) || "";
+
+    const hasLeadsBtn = LEAD_USERS.has(String(user.userId));
+    const leadsBtn = hasLeadsBtn ? `<button class="eqd-btn" data-action="leadsModal" data-userid="${user.userId}" id="btnLeads">LEADS</button>` : ``;
+
+    const finBtn = String(user.userId) === "813" ? `<a class="eqd-btn" href="${FINANCEIRO_URL}" target="_blank" rel="noopener">FINANCEIRO</a>` : ``;
+    const segBtn = SEGUROS_USERS.has(String(user.userId)) ? `<a class="eqd-btn" href="${SEGUROS_URL}" target="_blank" rel="noopener">SEGUROS</a>` : ``;
+
+    const followListBtn = `<button class="eqd-btn" data-action="followList" data-userid="${user.userId}">LISTA DE FOLLOW-UP</button>`;
+    const isSpecial = SPECIAL_PANEL_USERS.has(String(user.userId));
+
+    if (!isSpecial) {
+      const dealsDay = dealsOfSelectedDayPlusOverdueForUser(user.userId);
+      const ordered = sortDeals(dealsDay);
+      const cols = distributeInto3Cols(ordered);
+
+      el.main.innerHTML = `
+        <div class="panelHead">
+          <div class="panelUserInfo">
+            <img class="panelUserPhoto" src="${photo || ""}" referrerpolicy="no-referrer"
+                 onerror="try{this.onerror=null;this.src='';this.style.display='none'}catch(e){}" />
+            <div>
+              <div class="panelUserName">${escHtml(user.name)}</div>
+              <div class="panelUserTeam">Equipe ${escHtml(user.team || "")}</div>
+            </div>
+          </div>
+
+          <div class="panelTools">
+            <button class="eqd-btn" data-action="backToPrevious">VOLTAR</button>
+            ${finBtn}
+            ${segBtn}
+            ${followListBtn}
+            <button class="eqd-btn" data-action="followUpModal" data-userid="${user.userId}">FOLLOW-UP</button>
+            ${leadsBtn}
+            <button class="eqd-btn" id="batchResched">REAGENDAR EM LOTE</button>
+
+            <input class="eqd-searchInput" id="userSearch" placeholder="Buscar..." />
+            <button class="eqd-btn" id="userSearchBtn">Buscar</button>
+          </div>
+        </div>
+
+        <div class="panelCols">
+          ${[0, 1, 2].map((i) => `
+            <div class="panelCol">
+              <div class="panelColHead">Tarefas</div>
+              <div class="panelColBody" id="col_${i}">
+                ${cols[i].length ? cols[i].map((d) => makeDealCard(d, { allowBatch: true })).join("") : `<div class="eqd-empty">Sem itens do dia</div>`}
+              </div>
+            </div>
+          `).join("")}
+        </div>
+      `;
+
+      if (hasLeadsBtn) {
+        const btn = document.getElementById("btnLeads");
+        if (btn) {
+          if (STATE.leadsAlertUsers.has(String(user.userId))) { btn.classList.add("blinkRedBorder"); play3Beeps(); }
+          else btn.classList.remove("blinkRedBorder");
+        }
+      }
+
+      const doUserSearch = () => {
+        const kw = norm(String(document.getElementById("userSearch").value || "").trim());
+        if (!kw) return alert("Digite uma palavra.");
+        const hits = ordered.filter((d) => norm([d.TITLE || "", d._obs || "", d._tarefaTxt || "", d._colabTxt || "", d._etapaTxt || "", d._urgTxt || ""].join(" ")).includes(kw));
+        openModal(`Busca — ${user.name} • ${hits.length}`, hits.length ? hits.map((d) => makeDealCard(d, { allowBatch: false })).join("") : `<div class="eqd-empty">Nada encontrado.</div>`, { modalType:"OTHER" });
+      };
+      document.getElementById("userSearchBtn").onclick = doUserSearch;
+      document.getElementById("userSearch").onkeydown = (e) => { if (e.key === "Enter") doUserSearch(); };
+
+      document.getElementById("batchResched").onclick = async () => {
+        const ids = [...document.querySelectorAll(".eqd-batch:checked")].map((x) => x.getAttribute("data-id"));
+        if (!ids.length) return alert("Selecione tarefas marcando 'Lote' nos cards.");
+        await openBatchRescheduleAdvanced(ids);
+      };
+
+      return;
+    }
+
+    const { tasks, follow } = dealsForSpecialPanel(user.userId);
+    const orderedTasks = sortDeals(tasks);
+    const orderedFollow = sortDeals(follow);
+
+    if (!STATE.leadsByUser.has(String(user.userId))) {
+      loadLeadsForOneUser(user.userId).then(() => { renderUserPanel(user.userId); }).catch(() => {});
+    }
+
+    const leadsDay = leadsAttendedOnSelectedDay(user.userId);
+
+    el.main.innerHTML = `
+      <div class="panelHead">
+        <div class="panelUserInfo">
+          <img class="panelUserPhoto" src="${photo || ""}" referrerpolicy="no-referrer"
+               onerror="try{this.onerror=null;this.src='';this.style.display='none'}catch(e){}" />
+          <div>
+            <div class="panelUserName">${escHtml(user.name)}</div>
+            <div class="panelUserTeam">Equipe ${escHtml(user.team || "")}</div>
+          </div>
+        </div>
+
+        <div class="panelTools">
+          <button class="eqd-btn" data-action="backToPrevious">VOLTAR</button>
+          ${finBtn}
+          ${segBtn}
+          ${followListBtn}
+          <button class="eqd-btn" data-action="followUpModal" data-userid="${user.userId}">FOLLOW-UP</button>
+          ${leadsBtn}
+          <button class="eqd-btn" id="batchResched">REAGENDAR EM LOTE</button>
+
+          <input class="eqd-searchInput" id="userSearch" placeholder="Buscar..." />
+          <button class="eqd-btn" id="userSearchBtn">Buscar</button>
+        </div>
+      </div>
+
+      <div class="panelCols">
+        <div class="panelCol">
+          <div class="panelColHead">NEGÓCIOS DO DIA + ATRASADOS (exceto FOLLOW-UP)</div>
+          <div class="panelColBody" id="sp_tasks">
+            ${orderedTasks.length ? orderedTasks.map((d) => makeDealCard(d, { allowBatch: true })).join("") : `<div class="eqd-empty">Sem itens</div>`}
+          </div>
+        </div>
+
+        <div class="panelCol">
+          <div class="panelColHead">FOLLOW-UP DO DIA</div>
+          <div class="panelColBody" id="sp_follow">
+            ${orderedFollow.length ? orderedFollow.map((d) => makeDealCard(d, { allowBatch: true })).join("") : `<div class="eqd-empty">Sem follow-up no dia</div>`}
+          </div>
+        </div>
+
+        <div class="panelCol">
+          <div class="panelColHead">LEADS ATENDIDOS NO DIA</div>
+          <div class="panelColBody" id="sp_leads">
+            ${leadsDay.length ? leadsDay.map(renderLeadMiniCardForPanel).join("") : `<div class="eqd-empty">Sem leads atendidos no dia</div>`}
+          </div>
+        </div>
+      </div>
+    `;
+
+    if (hasLeadsBtn) {
+      const btn = document.getElementById("btnLeads");
+      if (btn) {
+        if (STATE.leadsAlertUsers.has(String(user.userId))) { btn.classList.add("blinkRedBorder"); play3Beeps(); }
+        else btn.classList.remove("blinkRedBorder");
+      }
+    }
+
+    const doUserSearch = () => {
+      const kw = norm(String(document.getElementById("userSearch").value || "").trim());
+      if (!kw) return alert("Digite uma palavra.");
+      const base = orderedTasks.concat(orderedFollow);
+      const hits = base.filter((d) => norm([d.TITLE || "", d._obs || "", d._tarefaTxt || "", d._colabTxt || "", d._etapaTxt || "", d._urgTxt || ""].join(" ")).includes(kw));
+      openModal(`Busca — ${user.name} • ${hits.length}`, hits.length ? hits.map((d) => makeDealCard(d, { allowBatch: false })).join("") : `<div class="eqd-empty">Nada encontrado.</div>`, { modalType:"OTHER" });
+    };
+    document.getElementById("userSearchBtn").onclick = doUserSearch;
+    document.getElementById("userSearch").onkeydown = (e) => { if (e.key === "Enter") doUserSearch(); };
+
+    document.getElementById("batchResched").onclick = async () => {
+      const ids = [...document.querySelectorAll(".eqd-batch:checked")].map((x) => x.getAttribute("data-id"));
+      if (!ids.length) return alert("Selecione tarefas marcando 'Lote' nos cards.");
+      await openBatchRescheduleAdvanced(ids);
+    };
+  }
+
+  // =========================
+  // 22) MULTI SELEÇÃO
+  // =========================
+  let lastMultiSelection = [];
+  function openMultiSelect() {
+    const pin = askPin();
+    if (!isAdmin(pin)) return;
+
+    openModal("Painel Multi Seleção", `
+      <div style="font-size:12px;font-weight:950;display:flex;justify-content:space-between;align-items:center">
+        <span>Selecione até 6 usuários</span>
+        <button class="eqd-btn" data-action="modalClose">VOLTAR</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px">
+        ${USERS.map((u) => `
+          <label style="display:flex;gap:8px;align-items:center;border:1px solid rgba(0,0,0,.12);border-radius:12px;padding:8px;background:rgba(255,255,255,.65)">
+            <input type="checkbox" class="ms-u" value="${u.userId}" ${lastMultiSelection.includes(Number(u.userId)) ? "checked" : ""}>
+            <span style="font-weight:950">${escHtml(u.name)}</span>
+          </label>
+        `).join("")}
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+        <button class="eqd-btn eqd-btnPrimary" id="ms-ok">Abrir</button>
+      </div>
+    `, { modalType:"OTHER" });
+
+    document.getElementById("ms-ok").onclick = () => {
+      const sel = [...document.querySelectorAll(".ms-u:checked")].map((x) => Number(x.value));
+      if (sel.length < 1) return alert("Selecione ao menos 1.");
+      if (sel.length > 6) return alert("Máximo 6.");
+      lastMultiSelection = sel.slice();
+      closeModal();
+      currentView = { kind: "multi", userId: null, multi: sel.slice() };
+      renderMultiColumns(sel);
+    };
+  }
+
+  function renderMultiColumns(userIds) {
+    const cols = userIds.length;
+    const ds = dayStart(selectedDate).getTime();
+    el.main.innerHTML = `
+      <div class="panelHead">
+        <div style="font-weight:950">PAINEL MULTI • Dia ${fmtDateOnly(selectedDate)}</div>
+        <div class="panelTools">
+          <button class="eqd-btn" data-action="backGeneral">VOLTAR</button>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(${cols},minmax(280px,1fr));gap:12px">
+        ${userIds.map((uid) => {
+          const u = USERS.find((x) => Number(x.userId) === Number(uid)) || { name: `User ${uid}`, userId: uid };
+          const photo = STATE.userPhotoById.get(Number(uid)) || "";
+          const deals = (STATE.dealsOpen || []).filter((d) => {
+            if (String(d.ASSIGNED_BY_ID || d._assigned || "") !== String(uid)) return false;
+            if (!d._prazo) return false;
+            const t = new Date(d._prazo).getTime();
+            if (!Number.isFinite(t)) return false;
+            return (t >= ds && t <= dayEnd(selectedDate).getTime()) || t < ds;
+          });
+          const ordered = sortDeals(deals);
+          return `
+            <section class="panelCol">
+              <div class="panelColHead" style="display:flex;gap:10px;align-items:center">
+                <img src="${photo || ""}" data-action="openUserFromMulti" data-userid="${uid}"
+                     style="width:52px;height:52px;border-radius:999px;object-fit:cover;border:1px solid rgba(0,0,0,.12);cursor:pointer" referrerpolicy="no-referrer"
+                     onerror="try{this.onerror=null;this.style.display='none'}catch(e){}" />
+                <span style="font-weight:950">${escHtml(u.name)}</span>
+              </div>
+              <div class="panelColBody">${ordered.length ? ordered.map((d) => makeDealCard(d, { allowBatch: false })).join("") : `<div class="eqd-empty">Sem itens do dia</div>`}</div>
+            </section>
+          `;
+        }).join("")}
+      </div>
+    `;
+  }
+
+  // =========================
+  // 23) DONE / EDIT / DELETE / URG (mantido)
+  // =========================
+  function openDoneMenu(dealId) {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() + 60);
+    const localDefault = new Date(now.getTime() - now.getTimezoneOffset()*60000).toISOString().slice(0,16);
+
+    openModal("Concluir", `
+      <div style="font-size:12px;font-weight:950;opacity:.88;margin-bottom:8px">O que você quer fazer?</div>
+
+      <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end">
+        <button class="eqd-btn" data-action="modalClose">Cancelar</button>
+        <button class="eqd-btn eqd-btnPrimary" data-action="doneOnly" data-id="${dealId}">Só concluir</button>
+        <button class="eqd-btn" id="btnDoneResched">Concluir e reagendar</button>
+      </div>
+
+      <div id="doneReschedBox" style="display:none;margin-top:12px;border-top:1px solid rgba(0,0,0,.10);padding-top:12px">
+        <div style="font-size:11px;font-weight:900;margin-bottom:6px">REAGENDAR (dia e hora)</div>
+        <input id="doneReschedDt" type="datetime-local" value="${localDefault}"
+               style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16)" />
+        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px;flex-wrap:wrap">
+          <button class="eqd-btn eqd-btnPrimary" data-action="doneReschedConfirm" data-id="${dealId}">Concluir e reagendar</button>
+        </div>
+        <div class="eqd-warn" id="doneWarn"></div>
+      </div>
+    `, { modalType:"OTHER" });
+
+    const btn = document.getElementById("btnDoneResched");
+    const box = document.getElementById("doneReschedBox");
+    btn.onclick = () => { box.style.display = box.style.display === "none" ? "block" : "none"; };
+  }
+
+  async function doneOnly(dealId) {
+    if (!STATE.doneStageId) throw new Error("Não encontrei a coluna CONCLUÍDO na pipeline.");
+    setBusy("Concluindo…");
+    await bx("crm.deal.update", { id: String(dealId), fields: { STAGE_ID: String(STATE.doneStageId) } });
+    removeFromOpen(dealId);
+    await refreshData(false);
+    clearBusy();
+    renderCurrentView();
+  }
+
+  async function doneAndReschedule(dealId, newIso) {
+    if (!STATE.doneStageId) throw new Error("Não encontrei a coluna CONCLUÍDO na pipeline.");
+    setBusy("Concluindo e reagendando…");
+    await bx("crm.deal.update", {
+      id: String(dealId),
+      fields: { STAGE_ID: String(STATE.doneStageId), [UF_PRAZO]: newIso }
+    });
+    removeFromOpen(dealId);
+    await refreshData(false);
+    clearBusy();
+    renderCurrentView();
+  }
+
+  async function editPrazo(dealId) {
+    const deal = (STATE.dealsAll || []).find((d) => String(d.ID) === String(dealId));
+    const cur = deal && deal._prazo ? new Date(deal._prazo) : new Date();
+    const localDefault = new Date(cur.getTime() - cur.getTimezoneOffset()*60000).toISOString().slice(0,16);
+
+    openModal("Editar prazo", `
+      <div class="eqd-warn" id="epWarn"></div>
+      <div style="font-size:11px;font-weight:900;margin-bottom:6px">Novo prazo (dia e hora)</div>
+      <input id="epDt" type="datetime-local" value="${localDefault}"
+             style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16)" />
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px;flex-wrap:wrap">
+        <button class="eqd-btn" data-action="modalClose">Cancelar</button>
+        <button class="eqd-btn eqd-btnPrimary" id="epSaveBtn" data-action="epSave" data-id="${dealId}">Salvar</button>
+      </div>
+    `, { modalType:"OTHER" });
+  }
+
+  async function editTitle(dealId) {
+    const deal = (STATE.dealsAll || []).find((d) => String(d.ID) === String(dealId));
+    const cur = deal ? String(deal.TITLE || "").trim() : "";
+    openModal("Editar negócio", `
+      <div class="eqd-warn" id="etWarn"></div>
+      <div style="font-size:11px;font-weight:900;margin-bottom:6px">Novo nome do negócio</div>
+      <input id="etText" value="${escHtml(cur)}"
+             style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:850" />
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px;flex-wrap:wrap">
+        <button class="eqd-btn" data-action="modalClose">Cancelar</button>
+        <button class="eqd-btn eqd-btnPrimary" data-action="etSave" data-id="${dealId}">Salvar</button>
+      </div>
+    `, { modalType:"OTHER" });
+  }
+
+  async function editUrg(dealId) {
+    const deal = (STATE.dealsAll || []).find((d) => String(d.ID) === String(dealId));
+    const urgMap = await enums(UF_URGENCIA).catch(() => ({}));
+    const options = Object.entries(urgMap || {}).map(([id, label]) => ({ id, label: String(label||"") }))
+      .sort((a,b) => norm(a.label).localeCompare(norm(b.label)));
+
+    const curId = deal ? String(deal[UF_URGENCIA] || deal._urgId || "") : "";
+    const curTxt = curId ? (urgMap[curId] || "") : "";
+
+    openModal("Urgência", `
+      <div class="eqd-warn" id="euWarn"></div>
+      <div style="font-size:12px;font-weight:950;opacity:.85;margin-bottom:10px">Atual: <strong>${escHtml(curTxt || "—")}</strong></div>
+      <select id="euSel" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:850">
+        <option value="">(vazio)</option>
+        ${options.map(o => `<option value="${escHtml(o.id)}" ${String(o.id)===String(curId)?"selected":""}>${escHtml(o.label)}</option>`).join("")}
+      </select>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px;flex-wrap:wrap">
+        <button class="eqd-btn" data-action="modalClose">Cancelar</button>
+        <button class="eqd-btn eqd-btnPrimary" data-action="euSave" data-id="${dealId}">Salvar</button>
+      </div>
+    `, { modalType:"OTHER" });
+  }
+
+  async function editObs(dealId) {
+    const old = (STATE.dealsAll || []).find((d) => String(d.ID) === String(dealId));
+    const cur = old ? String(old[UF_OBS] || "") : "";
+    openModal("Observações", `
+      <div class="eqd-warn" id="eoWarn"></div>
+      <textarea id="eoText" rows="7" style="width:100%;border-radius:14px;border:1px solid rgba(30,40,70,.16);padding:10px;font-weight:850;outline:none">${escHtml(cur)}</textarea>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px;flex-wrap:wrap">
+        <button class="eqd-btn" data-action="modalClose">Cancelar</button>
+        <button class="eqd-btn eqd-btnPrimary" data-action="eoSave" data-id="${dealId}">Salvar</button>
+      </div>
+    `, { modalType:"OTHER" });
+  }
+
+  async function changeColab(dealId) {
+    const list = USERS.map((u) => `${u.userId} - ${u.name}`).join("\n");
+    const pick = String(prompt("Digite o ID do novo responsável:\n" + list) || "").trim();
+    if (!pick) return;
+    const uid = Number(pick);
+    if (!uid) return alert("ID inválido.");
+    try {
+      setBusy("Transferindo…");
+      await bx("crm.deal.update", { id: String(dealId), fields: { ASSIGNED_BY_ID: uid } });
+      await refreshData(true);
+      clearBusy();
+      renderCurrentView();
+    } catch (e) {
+      clearBusy();
+      alert("Falha: " + (e.message || e));
+    }
+  }
+
+  async function deleteDeal(dealId) {
+    openModal("Confirmar exclusão", `
+      <div class="eqd-warn" style="display:block">Excluir este item?</div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+        <button class="eqd-btn" data-action="modalClose">Cancelar</button>
+        <button class="eqd-btn eqd-btnDanger" id="confirmDel">Excluir</button>
+      </div>
+    `, { modalType:"OTHER" });
+    document.getElementById("confirmDel").onclick = async () => {
+      const lk = `del:${dealId}`;
+      if (!lockTry(lk)) return;
+      try {
+        setBusy("Excluindo…");
+        await bx("crm.deal.delete", { id: String(dealId) });
+        removeFromOpen(dealId);
+        closeModal();
+        await refreshData(false);
+        renderCurrentView();
+      } catch (err) {
+        alert("Falha ao excluir: " + (err.message || err));
+      } finally {
+        clearBusy();
+        lockRelease(lk);
+      }
+    };
+  }
+
+  // =========================
+  // 24) REAGENDAR EM LOTE (mantido)
+  // =========================
+  async function openBatchRescheduleAdvanced(dealIds) {
+    const deals = dealIds
+      .map((id) => (STATE.dealsAll || []).find((d) => String(d.ID) === String(id)))
+      .filter(Boolean);
+
+    if (!deals.length) return alert("Nenhum card encontrado.");
+
+    const baseDay = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), 0,0,0,0);
+    const dateDefault = `${baseDay.getFullYear()}-${String(baseDay.getMonth()+1).padStart(2,"0")}-${String(baseDay.getDate()).padStart(2,"0")}`;
+
+    openModal(`Reagendar em lote • ${deals.length} item(ns)`, `
+      <div class="eqd-warn" id="brWarn"></div>
+
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;justify-content:space-between">
+        <div style="flex:1 1 auto;min-width:260px">
+          <div style="font-size:11px;font-weight:900;margin-bottom:6px">Dia (para todos)</div>
+          <input id="brDay" type="date" value="${dateDefault}"
+            style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:850" />
+          <div style="font-size:11px;font-weight:900;opacity:.70;margin-top:6px">
+            Escolha o dia e defina horário por card (ou manter original).
+          </div>
+        </div>
+
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+          <label style="display:flex;gap:8px;align-items:center;font-size:12px;font-weight:950">
+            <input type="checkbox" id="brKeep" checked>
+            Manter horário original
+          </label>
+          <button class="eqd-btn" data-action="modalClose">Cancelar</button>
+          <button class="eqd-btn eqd-btnPrimary" id="brApply">Aplicar</button>
+        </div>
+      </div>
+
+      <div style="margin-top:12px;border-top:1px solid rgba(0,0,0,.10);padding-top:12px">
+        <div style="font-size:12px;font-weight:950;opacity:.85;margin-bottom:8px">Cards selecionados</div>
+        <div id="brList" style="display:flex;flex-direction:column;gap:10px"></div>
+      </div>
+    `, { wide: true, modalType:"OTHER" });
+
+    const listEl = document.getElementById("brList");
+    const keepEl = document.getElementById("brKeep");
+
+    const pad2 = (n) => String(n).padStart(2,"0");
+    function hhmmFromDeal(d) {
+      if (!d || !d._prazo) return "09:00";
+      const dt = new Date(d._prazo);
+      if (Number.isNaN(dt.getTime())) return "09:00";
+      return `${pad2(dt.getHours())}:${pad2(dt.getMinutes())}`;
+    }
+
+    function renderList() {
+      const keep = !!keepEl.checked;
+      listEl.innerHTML = deals.map((d) => {
+        const h = hhmmFromDeal(d);
+        return `
+          <div class="eqd-card" style="--accent-rgb:${d._accent}">
+            <div class="eqd-bar"></div>
+            <div class="eqd-inner">
+              <div style="display:flex;gap:10px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap">
+                <div style="font-weight:950">${escHtml(bestTitleFromText(d.TITLE||""))}</div>
+                <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+                  <div style="font-size:11px;font-weight:900;opacity:.75">Horário</div>
+                  <input type="time" class="brTime" data-id="${d.ID}" value="${h}"
+                    style="padding:8px 10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900"
+                    ${keep ? "disabled" : ""} />
+                  <div style="font-size:11px;font-weight:900;opacity:.70">Original: <strong>${escHtml(h)}</strong></div>
+                </div>
+              </div>
+              <div style="font-size:11px;font-weight:900;opacity:.75;margin-top:6px">
+                Prazo atual: <strong>${escHtml(d._prazo ? fmt(d._prazo) : "—")}</strong> • ID: <strong>${escHtml(d.ID)}</strong>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    keepEl.onchange = renderList;
+    renderList();
+
+    document.getElementById("brApply").onclick = async () => {
+      const lk = `batchResched:${deals.map(d=>d.ID).join(",")}`;
+      if (!lockTry(lk)) return;
+
+      const warn = document.getElementById("brWarn");
+      warn.style.display = "none"; warn.textContent = "";
+
+      try {
+        const dayStr = String(document.getElementById("brDay").value || "").trim();
+        const m = dayStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (!m) throw new Error("Escolha um dia válido.");
+        const targetDay = new Date(Number(m[1]), Number(m[2])-1, Number(m[3]), 0,0,0,0);
+        if (Number.isNaN(targetDay.getTime())) throw new Error("Dia inválido.");
+
+        const keep = !!keepEl.checked;
+
+        setBusy("Reagendando…");
+
+        for (const d of deals) {
+          let hh = 9, mm = 0;
+          if (keep) {
+            const old = d._prazo ? new Date(d._prazo) : null;
+            if (old && !Number.isNaN(old.getTime())) { hh = old.getHours(); mm = old.getMinutes(); }
+          } else {
+            const inp = document.querySelector(`input.brTime[data-id="${d.ID}"]`);
+            const v = inp ? String(inp.value || "").trim() : "";
+            const mmatch = v.match(/^(\d{2}):(\d{2})$/);
+            if (mmatch) { hh = Number(mmatch[1]); mm = Number(mmatch[2]); }
+          }
+
+          const newIso = isoFromDateAndTimeParts(targetDay, hh, mm);
+          await bx("crm.deal.update", { id: String(d.ID), fields: { [UF_PRAZO]: newIso } });
+
+          d[UF_PRAZO] = newIso;
+          d._prazo = new Date(newIso).toISOString();
+          d._late = false;
+        }
+
+        closeModal();
+        await refreshData(false);
+        renderCurrentView();
+      } catch (e) {
+        clearBusy();
+        warn.style.display = "block";
+        warn.textContent = "Falha:\n" + (e.message || e);
+        return;
+      } finally {
+        clearBusy();
+        lockRelease(lk);
+      }
+    };
+  }
+
+  // =========================
+  // 25) CLICK HANDLER (global)
+  // =========================
+  function globalClickHandler(e) {
+    const a = e.target.closest("[data-action]");
+    if (!a) return;
+
+    const act = a.getAttribute("data-action");
+    const dealId = a.getAttribute("data-id");
+    const uid = a.getAttribute("data-userid");
+    const leadId = a.getAttribute("data-leadid");
+    const toStatus = a.getAttribute("data-tostatus");
+    const defStatus = a.getAttribute("data-defaultstatus");
+
+    if (act === "modalClose") return closeModal();
+
+    if (act === "openUser") {
+      const userId = Number(uid);
+      if (!canOpenUserPanel(userId)) return;
+      currentView = { kind: "user", userId, multi: currentView.multi };
+      renderUserPanel(userId);
+      return;
+    }
+
+    if (act === "openUserFromMulti") {
+      const userId = Number(uid);
+      if (!canOpenUserPanel(userId)) return;
+      currentView = { kind: "user", userId, multi: lastMultiSelection.slice() };
+      renderUserPanel(userId);
+      return;
+    }
+
+    if (act === "backGeneral") { currentView = { kind: "general", userId: null, multi: null }; return renderGeneral(); }
+
+    if (act === "backToPrevious") {
+      if (currentView.multi && currentView.multi.length) {
+        currentView = { kind: "multi", userId: null, multi: currentView.multi.slice() };
+        return renderMultiColumns(currentView.multi);
+      }
+      currentView = { kind: "general", userId: null, multi: null };
+      return renderGeneral();
+    }
+
+    if (act === "followUpModal") {
+      const user = USERS.find((u) => Number(u.userId) === Number(uid));
+      if (!user) return;
+      return openFollowUpModal(user, "", null);
+    }
+
+    if (act === "followList") {
+      const user = USERS.find((u) => Number(u.userId) === Number(uid));
+      if (!user) return;
+      return openFollowupListModalForUser(user);
+    }
+
+    if (act === "leadsModal") { return openLeadsModalForUser(uid, ""); }
+
+    if (act === "leadNewManual") {
+      const user = USERS.find((u) => String(u.userId) === String(uid));
+      if (!user) return;
+      return openManualLeadCreateModal(user, defStatus || "");
+    }
+
+    // ✅ abrir modal de transferência
+    if (act === "leadTransferOpen") {
+      if (!leadId || !uid) return;
+      return openLeadTransferModal(uid, leadId);
+    }
+
+    // ✅ mover lead e MANTER modal LEADS (sempre)
+    if (act === "leadMove") {
+      if (!leadId || !toStatus) return;
+      setBusy("Movendo lead…");
+      bx("crm.lead.update", { id: String(leadId), fields: { STATUS_ID: String(toStatus) } })
+        .then(() => loadLeadsForOneUser(uid))
+        .then(() => { clearBusy(); reopenLeadsModalSafe(); })
+        .catch((err) => { clearBusy(); alert(err.message || err); });
+      return;
+    }
+
+    if (act === "leadObsModal") {
+      return openLeadObsModal(uid, leadId);
+    }
+
+    if (act === "leadFollowupModal") {
+      const user = USERS.find((u) => String(u.userId) === String(uid));
+      const leads = STATE.leadsByUser.get(String(uid)) || [];
+      const lead = leads.find((l) => String(l.ID) === String(leadId));
+      if (!user || !lead) return;
+      return openFollowUpModal(user, leadTitle(lead), { returnToLeads: { userId: String(uid), kw: MODAL_STATE.leads.kw || "" } });
+    }
+
+    if (act === "doneMenu") return openDoneMenu(dealId);
+    if (act === "doneOnly") { closeModal(); return doneOnly(dealId).catch((err) => alert(err.message || err)); }
+
+    if (act === "doneReschedConfirm") {
+      const warn = document.getElementById("doneWarn");
+      if (warn) { warn.style.display = "none"; warn.textContent = ""; }
+      const v = document.getElementById("doneReschedDt") ? String(document.getElementById("doneReschedDt").value || "").trim() : "";
+      const iso = localInputToIsoWithOffset(v);
+      if (!iso) {
+        if (warn) { warn.style.display = "block"; warn.textContent = "Prazo inválido."; }
+        return;
+      }
+      closeModal();
+      return doneAndReschedule(dealId, iso).catch((err) => alert(err.message || err));
+    }
+
+    if (act === "editPrazo") return editPrazo(dealId);
+    if (act === "editTitle") return editTitle(dealId);
+    if (act === "editUrg") return editUrg(dealId);
+    if (act === "editObs") return editObs(dealId);
+    if (act === "changeColab") return changeColab(dealId);
+    if (act === "delete") return deleteDeal(dealId);
+
+    if (act === "epSave") {
+      const lk = `epSave:${dealId}`;
+      if (!lockTry(lk)) return;
+
+      const btn = document.getElementById("epSaveBtn");
+      if (btn) btn.disabled = true;
+
+      const v = document.getElementById("epDt") ? String(document.getElementById("epDt").value || "").trim() : "";
+      const iso = localInputToIsoWithOffset(v);
+      if (!iso) { if (btn) btn.disabled = false; lockRelease(lk); return alert("Prazo inválido."); }
+
+      const now = new Date();
+      const pDate = new Date(iso);
+      const late = !Number.isNaN(pDate.getTime()) ? pDate.getTime() < now.getTime() : false;
+      updateDealInState(dealId, {
+        [UF_PRAZO]: iso,
+        _prazo: !Number.isNaN(pDate.getTime()) ? pDate.toISOString() : "",
+        _late: late
+      });
+      closeModal();
+      renderCurrentView();
+
+      setBusy("Salvando prazo…");
+      bx("crm.deal.update", { id: String(dealId), fields: { [UF_PRAZO]: iso } })
+        .then(() => refreshData(false))
+        .then(() => { clearBusy(); renderCurrentView(); })
+        .catch((e) => { clearBusy(); alert("Falha: " + (e.message || e)); })
+        .finally(() => { if (btn) btn.disabled = false; lockRelease(lk); });
+      return;
+    }
+
+    if (act === "etSave") {
+      const v = document.getElementById("etText") ? String(document.getElementById("etText").value || "").trim() : "";
+      if (!v) return alert("Nome vazio.");
+      setBusy("Salvando…");
+      bx("crm.deal.update", { id: String(dealId), fields: { TITLE: v } })
+        .then(() => refreshData(false))
+        .then(() => { clearBusy(); closeModal(); renderCurrentView(); })
+        .catch((e) => { clearBusy(); alert("Falha: " + (e.message || e)); });
+      return;
+    }
+
+    if (act === "euSave") {
+      const v = document.getElementById("euSel") ? String(document.getElementById("euSel").value || "").trim() : "";
+      setBusy("Salvando urgência…");
+      bx("crm.deal.update", { id: String(dealId), fields: { [UF_URGENCIA]: v } })
+        .then(() => refreshData(false))
+        .then(() => { clearBusy(); closeModal(); renderCurrentView(); })
+        .catch((e) => { clearBusy(); alert("Falha: " + (e.message || e)); });
+      return;
+    }
+
+    if (act === "eoSave") {
+      const v = document.getElementById("eoText") ? String(document.getElementById("eoText").value || "").trim() : "";
+      setBusy("Salvando OBS…");
+      bx("crm.deal.update", { id: String(dealId), fields: { [UF_OBS]: v } })
+        .then(() => refreshData(false))
+        .then(() => { clearBusy(); closeModal(); renderCurrentView(); })
+        .catch((e) => { clearBusy(); alert("Falha: " + (e.message || e)); });
+      return;
+    }
+  }
+
+  el.main.addEventListener("click", globalClickHandler);
+  el.modalBody.addEventListener("click", globalClickHandler);
+
+  // =========================
+  // 26) TOP BUTTONS
+  // =========================
+  el.refresh.addEventListener("click", () => { refreshData(true).then(renderCurrentView).catch(() => {}); });
+  el.today.addEventListener("click", () => { selectedDate = new Date(); renderCurrentView(); });
+  el.calendar.addEventListener("click", openCalendarModal);
+  el.multi.addEventListener("click", openMultiSelect);
 
   // =========================
   // 27) RENDER
@@ -1499,45 +2910,28 @@
   }
 
   // =========================
-  // 29) INIT  ✅ (TRECHO QUE ESTAVA TRUNCADO)
+  // 29) INIT
   // =========================
   (async () => {
     try {
-      // bootstrap stages (precisa pra filtrar CONCLUÍDO ao usar cache)
       await loadStagesForCategory(CATEGORY_MAIN).catch(() => {});
       STATE.bootstrapLoaded = true;
+      loadCache();
+    } catch (_) {}
 
-      // cache-first (renderiza rápido)
-      const cached = loadCache();
-      if (cached) {
-        STATE.lastOkAt = new Date();
-        STATE.offline = true; // cache pode estar “velho” até o primeiro refresh
+    currentView = { kind: "general", userId: null, multi: null };
+    renderCurrentView();
+
+    refreshData(true).then(() => renderCurrentView()).catch(() => {});
+
+    setInterval(() => {
+      if (!REFRESH_RUNNING && BX_INFLIGHT === 0) {
+        refreshData(false).then(() => {
+          // ✅ se modal LEADS aberto, só atualiza meta/status, sem render
+          if (!isLeadsModalOpen()) renderCurrentView();
+          else el.meta.textContent = STATE.lastOkAt ? `Atualizado em ${fmt(STATE.lastOkAt)}${STATE.offline ? " • (offline)" : ""}` : `Carregando…`;
+        }).catch(() => {});
       }
-
-      // render inicial
-      renderGeneral();
-      renderCurrentView();
-
-      // fotos do rodapé em background
-      Promise.allSettled(FOOTER_PARTNERS.map((p) => ensureUserPhoto(p.userId, ""))).then(() => {
-        STATE.footerPhotosLoaded = true;
-        renderFooterPeople();
-      });
-
-      // primeiro refresh completo
-      await refreshData(true);
-      renderCurrentView();
-
-      // refresh periódico
-      setInterval(() => {
-        refreshData(false)
-          .then(() => renderCurrentView())
-          .catch(() => {});
-      }, REFRESH_MS);
-
-    } catch (e) {
-      showFatal(e);
-    }
-  })();
-
+    }, REFRESH_MS);
+  })().catch(showFatal);
 })();
