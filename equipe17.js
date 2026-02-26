@@ -2160,6 +2160,64 @@
     };
   }
 
+  function openLeadTransferModal(userId, leadId){
+    const uid = String(userId||"");
+    const lid = String(leadId||"");
+    if (!uid || !lid) return;
+
+    const me = USERS.find(u => String(u.userId) === uid);
+    const others = USERS.filter(u => String(u.userId) !== uid);
+
+    const opts = others.map(u => `<option value="${escHtml(String(u.userId))}">${escHtml(u.name)}</option>`).join("");
+    openModal("Transferir lead", `
+      <div class="eqd-warn" id="ltWarn"></div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="font-size:12px;font-weight:950;opacity:.85">De: <strong>${escHtml(me?me.name:uid)}</strong></div>
+        <div style="font-size:11px;font-weight:900">Para</div>
+        <select id="ltTo" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
+          <option value="">Selecione a USER…</option>
+          ${opts || `<option value="">(sem opções)</option>`}
+        </select>
+        <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+          <button class="eqd-btn" data-action="modalClose">Cancelar</button>
+          <button class="eqd-btn eqd-btnPrimary" id="ltSave">TRANSFERIR</button>
+        </div>
+      </div>
+    `);
+
+    const warn = document.getElementById("ltWarn");
+    const btn = document.getElementById("ltSave");
+    btn.onclick = async () => {
+      const lk = `leadTransfer:${lid}`;
+      if (!lockTry(lk)) return;
+      try{
+        btn.disabled = true;
+        warn.style.display = "none";
+        const to = String(document.getElementById("ltTo").value||"").trim();
+        if (!to) throw new Error("Selecione a USER de destino.");
+        setBusy("Transferindo…");
+
+        // ✅ SALVAR AQUI
+        await bx("crm.lead.update", { id: String(lid), fields: { ASSIGNED_BY_ID: Number(to) } });
+
+        await loadLeadsForOneUser(uid);
+        if (String(to) !== uid) await loadLeadsForOneUser(String(to));
+
+        clearBusy();
+        closeModal();
+        reopenLeadsModalSafe();
+      }catch(e){
+        try{ clearBusy(); }catch(_){}
+        warn.style.display = "block";
+        warn.textContent = "Falha:\n" + (e.message || e);
+      }finally{
+        btn.disabled = false;
+        lockRelease(lk);
+      }
+    };
+  }
+
+
   async function openManualLeadCreateModal(user, defaultStatusId) {
     const now = new Date();
     const localNow = new Date(now.getTime() - now.getTimezoneOffset()*60000).toISOString().slice(0,16);
@@ -2396,7 +2454,10 @@
                 <button class="leadBtn" data-action="leadFollowupModal" data-leadid="${l.ID}" data-userid="${user.userId}">FOLLOW-UP</button>`;
       }
 
-      return `
+      
+      // Transferir lead para outra USER (mantém modal)
+      btns += `<button class="leadBtn leadBtnGhost" data-action="leadTransfer" data-userid="${escHtml(String(LAST_LEADS_CTX.userId||\"\\"))}" data-leadid="${escHtml(String(l.ID||\"\\"))}">TRANSFERIR</button>`;
+return `
         <div class="leadCard">
           <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap">
             <div class="leadTitle">${escHtml(leadTitle(l))}</div>
@@ -3452,6 +3513,14 @@
         if (!uid || !leadId) return;
         return openLeadObsModal(uid, leadId);
       }
+
+      if (act === "leadTransfer") {
+        const uid = String(a.getAttribute("data-userid")||"");
+        const leadId = String(a.getAttribute("data-leadid")||"");
+        if (!uid || !leadId) return;
+        return openLeadTransferModal(uid, leadId);
+      }
+
 
       if (act === "leadMove") {
         const uid = String(a.getAttribute("data-userid")||"");
