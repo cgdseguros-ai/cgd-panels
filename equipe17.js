@@ -496,18 +496,47 @@
     return data.result;
   }
 
-  async function bxAll(method, params = {}) {
-    let all = [];
-    let start = 0;
-    while (true) {
-      const data = await bxRaw(method, { ...params, start });
-      const chunk = data.result || [];
-      all = all.concat(chunk);
-      if (data.next === undefined || data.next === null) break;
-      start = data.next;
-    }
-    return all;
+  async function bxAll(method, params) {
+  const isDealList = method === "crm.deal.list";
+
+  // cache/dedupe SÓ para o deal.list principal (para segurar rajada)
+  // chave fixa + filtro/select/order (se mudar, muda cache também)
+  const cacheKey = isDealList ? stableKey("crm.deal.list", params) : null;
+
+  // 1) cache curtíssimo
+  if (isDealList) {
+    const hit = __memCache.get(cacheKey);
+    if (hit && (Date.now() - hit.at) < PERF.dealListCacheMs) return hit.data;
   }
+
+  // 2) dedupe: se já tem uma paginação em voo igual, reaproveita
+  if (isDealList && __inflight.has(cacheKey)) return __inflight.get(cacheKey);
+
+  const runner = (async () => {
+    let out = [];
+    let start = 0;
+
+    while (true) {
+      const data = await bx(method, { ...params, start }); // usa sua função bx existente
+      const chunk = (data && data.result) ? data.result : [];
+      out = out.concat(chunk);
+
+      // Bitrix: se tiver next, continua; senão para
+      const next = data && (data.next || (data.result && data.result.next));
+      if (next === undefined || next === null || next === false) break;
+
+      start = Number(next);
+      if (!Number.isFinite(start)) break;
+    }
+
+    if (isDealList) __memCache.set(cacheKey, { at: Date.now(), data: out });
+    return out;
+  })();
+
+  if (isDealList) __inflight.set(cacheKey, runner);
+  try { return await runner; }
+  finally { if (isDealList) __inflight.delete(cacheKey); }
+}
 
   // =========================
   // 4) UTILS
@@ -2880,20 +2909,41 @@
   // 23) AÇÕES: concluir / editar / excluir / leads move / recorrência manager
   // =========================
   async function refreshData(forceNetwork) {
+  // anti-rajada
+  const now = Date.now();
+  if (!forceNetwork && (now - __lastRefreshAt) < PERF.minRefreshGapMs) {
+    scheduleRefresh(false);
+    return;
+  }
+
+  // 1 refresh por vez (se vier outro, reaproveita)
+  if (__refreshInFlight) return __refreshInFlight;
+
+  __refreshInFlight = (async () => {
+    __lastRefreshAt = Date.now();
+
     if (!STATE.doneStageId) await loadStagesForCategory(CATEGORY_MAIN);
 
     if (!forceNetwork) loadCache();
+
     try {
-      await loadDeals();
+      await loadDeals(); // aqui vamos cachear o deal.list (veja abaixo)
       await loadRecurrenceConfigDeals().catch(()=>{});
       await generateRecurringDealsWindow().catch(()=>{});
       renderFooterPeople();
       el.meta.textContent = `Atualizado: ${fmt(new Date())}`;
-    } catch (_) {
+      STATE.offline = false;
+    } catch (err) {
       STATE.offline = true;
       el.meta.textContent = `Offline (cache)`;
+      console.error("[refreshData] erro:", err);
+    } finally {
+      __refreshInFlight = null;
     }
-  }
+  })();
+
+  return __refreshInFlight;
+}
 
   function renderCurrentView() {
     if (currentView.kind === "general") return renderGeneral();
