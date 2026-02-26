@@ -496,47 +496,18 @@
     return data.result;
   }
 
-  async function bxAll(method, params) {
-  const isDealList = method === "crm.deal.list";
-
-  // cache/dedupe SÓ para o deal.list principal (para segurar rajada)
-  // chave fixa + filtro/select/order (se mudar, muda cache também)
-  const cacheKey = isDealList ? stableKey("crm.deal.list", params) : null;
-
-  // 1) cache curtíssimo
-  if (isDealList) {
-    const hit = __memCache.get(cacheKey);
-    if (hit && (Date.now() - hit.at) < PERF.dealListCacheMs) return hit.data;
-  }
-
-  // 2) dedupe: se já tem uma paginação em voo igual, reaproveita
-  if (isDealList && __inflight.has(cacheKey)) return __inflight.get(cacheKey);
-
-  const runner = (async () => {
-    let out = [];
+  async function bxAll(method, params = {}) {
+    let all = [];
     let start = 0;
-
     while (true) {
-      const data = await bx(method, { ...params, start }); // usa sua função bx existente
-      const chunk = (data && data.result) ? data.result : [];
-      out = out.concat(chunk);
-
-      // Bitrix: se tiver next, continua; senão para
-      const next = data && (data.next || (data.result && data.result.next));
-      if (next === undefined || next === null || next === false) break;
-
-      start = Number(next);
-      if (!Number.isFinite(start)) break;
+      const data = await bxRaw(method, { ...params, start });
+      const chunk = data.result || [];
+      all = all.concat(chunk);
+      if (data.next === undefined || data.next === null) break;
+      start = data.next;
     }
-
-    if (isDealList) __memCache.set(cacheKey, { at: Date.now(), data: out });
-    return out;
-  })();
-
-  if (isDealList) __inflight.set(cacheKey, runner);
-  try { return await runner; }
-  finally { if (isDealList) __inflight.delete(cacheKey); }
-}
+    return all;
+  }
 
   // =========================
   // 4) UTILS
@@ -2160,64 +2131,6 @@
     };
   }
 
-  function openLeadTransferModal(userId, leadId){
-    const uid = String(userId||"");
-    const lid = String(leadId||"");
-    if (!uid || !lid) return;
-
-    const me = USERS.find(u => String(u.userId) === uid);
-    const others = USERS.filter(u => String(u.userId) !== uid);
-
-    const opts = others.map(u => `<option value="${escHtml(String(u.userId))}">${escHtml(u.name)}</option>`).join("");
-    openModal("Transferir lead", `
-      <div class="eqd-warn" id="ltWarn"></div>
-      <div style="display:flex;flex-direction:column;gap:10px">
-        <div style="font-size:12px;font-weight:950;opacity:.85">De: <strong>${escHtml(me?me.name:uid)}</strong></div>
-        <div style="font-size:11px;font-weight:900">Para</div>
-        <select id="ltTo" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16);font-weight:900">
-          <option value="">Selecione a USER…</option>
-          ${opts || `<option value="">(sem opções)</option>`}
-        </select>
-        <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
-          <button class="eqd-btn" data-action="modalClose">Cancelar</button>
-          <button class="eqd-btn eqd-btnPrimary" id="ltSave">TRANSFERIR</button>
-        </div>
-      </div>
-    `);
-
-    const warn = document.getElementById("ltWarn");
-    const btn = document.getElementById("ltSave");
-    btn.onclick = async () => {
-      const lk = `leadTransfer:${lid}`;
-      if (!lockTry(lk)) return;
-      try{
-        btn.disabled = true;
-        warn.style.display = "none";
-        const to = String(document.getElementById("ltTo").value||"").trim();
-        if (!to) throw new Error("Selecione a USER de destino.");
-        setBusy("Transferindo…");
-
-        // ✅ SALVAR AQUI
-        await bx("crm.lead.update", { id: String(lid), fields: { ASSIGNED_BY_ID: Number(to) } });
-
-        await loadLeadsForOneUser(uid);
-        if (String(to) !== uid) await loadLeadsForOneUser(String(to));
-
-        clearBusy();
-        closeModal();
-        reopenLeadsModalSafe();
-      }catch(e){
-        try{ clearBusy(); }catch(_){}
-        warn.style.display = "block";
-        warn.textContent = "Falha:\n" + (e.message || e);
-      }finally{
-        btn.disabled = false;
-        lockRelease(lk);
-      }
-    };
-  }
-
-
   async function openManualLeadCreateModal(user, defaultStatusId) {
     const now = new Date();
     const localNow = new Date(now.getTime() - now.getTimezoneOffset()*60000).toISOString().slice(0,16);
@@ -2454,10 +2367,7 @@
                 <button class="leadBtn" data-action="leadFollowupModal" data-leadid="${l.ID}" data-userid="${user.userId}">FOLLOW-UP</button>`;
       }
 
-      
-      // Transferir lead para outra USER (mantém modal)
-      btns += `<button class="leadBtn leadBtnGhost" data-action="leadTransfer" data-userid="${escHtml(String(LAST_LEADS_CTX.userId||""))}" data-leadid="${escHtml(String(l.ID||""))}">TRANSFERIR</button>`;
-return `
+      return `
         <div class="leadCard">
           <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap">
             <div class="leadTitle">${escHtml(leadTitle(l))}</div>
@@ -2970,41 +2880,20 @@ return `
   // 23) AÇÕES: concluir / editar / excluir / leads move / recorrência manager
   // =========================
   async function refreshData(forceNetwork) {
-  // anti-rajada
-  const now = Date.now();
-  if (!forceNetwork && (now - __lastRefreshAt) < PERF.minRefreshGapMs) {
-    scheduleRefresh(false);
-    return;
-  }
-
-  // 1 refresh por vez (se vier outro, reaproveita)
-  if (__refreshInFlight) return __refreshInFlight;
-
-  __refreshInFlight = (async () => {
-    __lastRefreshAt = Date.now();
-
     if (!STATE.doneStageId) await loadStagesForCategory(CATEGORY_MAIN);
 
     if (!forceNetwork) loadCache();
-
     try {
-      await loadDeals(); // aqui vamos cachear o deal.list (veja abaixo)
+      await loadDeals();
       await loadRecurrenceConfigDeals().catch(()=>{});
       await generateRecurringDealsWindow().catch(()=>{});
       renderFooterPeople();
       el.meta.textContent = `Atualizado: ${fmt(new Date())}`;
-      STATE.offline = false;
-    } catch (err) {
+    } catch (_) {
       STATE.offline = true;
       el.meta.textContent = `Offline (cache)`;
-      console.error("[refreshData] erro:", err);
-    } finally {
-      __refreshInFlight = null;
     }
-  })();
-
-  return __refreshInFlight;
-}
+  }
 
   function renderCurrentView() {
     if (currentView.kind === "general") return renderGeneral();
@@ -3514,14 +3403,6 @@ return `
         return openLeadObsModal(uid, leadId);
       }
 
-      if (act === "leadTransfer") {
-        const uid = String(a.getAttribute("data-userid")||"");
-        const leadId = String(a.getAttribute("data-leadid")||"");
-        if (!uid || !leadId) return;
-        return openLeadTransferModal(uid, leadId);
-      }
-
-
       if (act === "leadMove") {
         const uid = String(a.getAttribute("data-userid")||"");
         const leadId = String(a.getAttribute("data-leadid")||"");
@@ -3635,3 +3516,8 @@ return `
   }, REFRESH_MS);
 
 })();
+
+
+----------------------------------------------------
+
+
