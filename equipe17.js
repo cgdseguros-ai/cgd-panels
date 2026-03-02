@@ -38,8 +38,8 @@
     { name: "Maria Clara", userId: 841, team: "DELTA" },
     { name: "Beatriz", userId: 3387, team: "DELTA" },
     { name: "Bruna Luisa", userId: 3081, team: "DELTA" },
+    { name: "Diogo", userId: 1, team: "DELTA" },
 
-    { name: "Cesar", userId: 1, team: "ALPHA" },
     { name: "Aline", userId: 15, team: "ALPHA" },
     { name: "Adriana", userId: 19, team: "ALPHA" },
     { name: "Andreyna", userId: 17, team: "ALPHA" },
