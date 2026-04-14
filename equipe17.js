@@ -1015,15 +1015,15 @@
 
   function normDateCompareEq(a, b) {
     // Tolerância de fuso horário: se ambos parseáveis como data, comparar com margem de 24h (campo date-only)
+    const MS_24H = 86400000;
     const da = tryParseDateAny(a);
     const db = tryParseDateAny(b);
     if (da && db) {
       // Para campos date-only, comparar apenas YYYY-MM-DD
-      const ka = da.getFullYear() + '-' + String(da.getMonth()+1).padStart(2,'0') + '-' + String(da.getDate()).padStart(2,'0');
-      const kb = db.getFullYear() + '-' + String(db.getMonth()+1).padStart(2,'0') + '-' + String(db.getDate()).padStart(2,'0');
-      if (ka === kb) return true;
+      const toYMD = (d) => d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+      if (toYMD(da) === toYMD(db)) return true;
       // Para campos datetime, tolerar até 24h de diferença (fuso)
-      if (Math.abs(da.getTime() - db.getTime()) <= 86400000) return true;
+      if (Math.abs(da.getTime() - db.getTime()) <= MS_24H) return true;
     }
     return normalizeCompareValue(a) === normalizeCompareValue(b);
   }
@@ -3028,7 +3028,23 @@ restoreSyncQueue();
         const job = SYNC_QUEUE[0];
         if (!job) { SYNC_QUEUE.shift(); persistSyncQueue(); continue; }
         if (job.type === "dealAdd") { const realId = await bx("crm.deal.add", { fields: job.fields }); replaceDealIdLocal(job.tempId, String(realId)); SYNC_QUEUE.shift(); persistSyncQueue(); continue; }
-        if (job.type === "dealUpdate") { if (isTempId(job.dealId)) { job._deferCount = (job._deferCount || 0) + 1; if (job._deferCount < 15) { SYNC_QUEUE.push(SYNC_QUEUE.shift()); persistSyncQueue(); } else { SYNC_QUEUE.shift(); persistSyncQueue(); } continue; } await safeDealUpdate(String(job.dealId), job.fields); SYNC_QUEUE.shift(); persistSyncQueue(); continue; }
+        if (job.type === "dealUpdate") {
+          if (isTempId(job.dealId)) {
+            const DEFER_MAX = 15;
+            job._deferCount = (job._deferCount || 0) + 1;
+            if (job._deferCount < DEFER_MAX) {
+              SYNC_QUEUE.push(SYNC_QUEUE.shift());
+            } else {
+              SYNC_QUEUE.shift();
+            }
+            persistSyncQueue();
+            continue;
+          }
+          await safeDealUpdate(String(job.dealId), job.fields);
+          SYNC_QUEUE.shift();
+          persistSyncQueue();
+          continue;
+        }
         if (job.type === "dealDelete") { if (!isTempId(job.dealId)) { try { await bx("crm.deal.delete", { id: String(job.dealId) }); } catch (e) { const msg = String(e && e.message || e || ''); if (!/400/.test(msg)) throw e; } } SYNC_QUEUE.shift(); persistSyncQueue(); continue; }
         if (job.type === "leadUpdate") { await bx("crm.lead.update", { id: String(job.leadId), fields: job.fields }); SYNC_QUEUE.shift(); persistSyncQueue(); continue; }
         if (job.type === "leadDelete") { try { await bx("crm.lead.delete", { id: String(job.leadId) }); } catch (e) { const msg = String(e && e.message || e || ''); if (!/400/.test(msg)) throw e; } SYNC_QUEUE.shift(); persistSyncQueue(); continue; }
