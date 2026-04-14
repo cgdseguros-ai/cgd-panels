@@ -48,6 +48,7 @@
   const RECURRENCE_MARKER_RE = /\[RUID=([^\]]+)\]/i;
   const RECURRENCE_GEN_LOCK_KEY = "EQD_RECUR_GEN_LOCK_V2";
   const RECURRENCE_GEN_LOCK_TTL_MS = 90 * 1000;
+  let RECURRENCE_GEN_RUNNING_IN_TAB = false;
 
   // USERS
   const USERS = [
@@ -644,6 +645,12 @@
             throw new Error(`HTTP ${resp.status} (temporário) em ${method}`);
           }
 
+          if (resp.status === 400) {
+            const body400 = await resp.text().catch(() => "(sem corpo)");
+            console.error("[EQD-BX400]", method, JSON.stringify(params || {}).slice(0, 800), "RESP:", body400.slice(0, 800));
+            throw new Error(`HTTP 400 em ${method}: ${body400.slice(0, 600)}`);
+          }
+
           const data = await resp.json().catch(() => ({}));
           if (!resp.ok) throw new Error(`HTTP ${resp.status} em ${method}`);
           if (data.error) throw new Error(data.error_description || data.error);
@@ -1006,10 +1013,25 @@
     return String(v).trim();
   }
 
+  function normDateCompareEq(a, b) {
+    // Tolerância de fuso horário: se ambos parseáveis como data, comparar com margem de 24h (campo date-only)
+    const MS_24H = 86400000;
+    const da = tryParseDateAny(a);
+    const db = tryParseDateAny(b);
+    if (da && db) {
+      // Para campos date-only, comparar apenas YYYY-MM-DD
+      const toYMD = (d) => d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+      if (toYMD(da) === toYMD(db)) return true;
+      // Para campos datetime, tolerar até 24h de diferença (fuso)
+      if (Math.abs(da.getTime() - db.getTime()) <= MS_24H) return true;
+    }
+    return normalizeCompareValue(a) === normalizeCompareValue(b);
+  }
+
   function dealFieldsMatchRequested(deal, fields) {
     const src = deal || {};
     const wanted = fields || {};
-    return Object.keys(wanted).every((k) => normalizeCompareValue(src[k]) === normalizeCompareValue(wanted[k]));
+    return Object.keys(wanted).every((k) => normDateCompareEq(src[k], wanted[k]));
   }
 
   const LOCAL_DEAL_PATCH_TTL_MS = 15000;
@@ -1075,10 +1097,14 @@
 
   async function safeDealUpdate(dealId, fields) {
     const id = String(dealId);
-    registerLocalDealPatch(id, fields);
+    // Remover campos undefined/null para evitar HTTP 400
+    const fieldsToSend = Object.fromEntries(
+      Object.entries(fields || {}).filter(([, v]) => v !== undefined && v !== null)
+    );
+    registerLocalDealPatch(id, fieldsToSend);
     try {
-      const out = await bx("crm.deal.update", { id, fields });
-      registerLocalDealPatch(id, fields, 12000);
+      const out = await bx("crm.deal.update", { id, fields: fieldsToSend });
+      registerLocalDealPatch(id, fieldsToSend, 12000);
       return out;
     } catch (e) {
       const msg = String((e && e.message) || e || "");
@@ -1087,8 +1113,8 @@
       const verify = async () => {
         try {
           const fresh = await bx("crm.deal.get", { id });
-          if (dealFieldsMatchRequested(fresh, fields)) {
-            registerLocalDealPatch(id, fields, 12000);
+          if (dealFieldsMatchRequested(fresh, fieldsToSend)) {
+            registerLocalDealPatch(id, fieldsToSend, 12000);
             return true;
           }
           return false;
@@ -1101,8 +1127,8 @@
       await new Promise((r) => setTimeout(r, 180));
       if (await verify()) return true;
       try {
-        const out = await bx("crm.deal.update", { id, fields });
-        registerLocalDealPatch(id, fields, 12000);
+        const out = await bx("crm.deal.update", { id, fields: fieldsToSend });
+        registerLocalDealPatch(id, fieldsToSend, 12000);
         return out;
       } catch (_) {}
       await new Promise((r) => setTimeout(r, 420));
@@ -1760,21 +1786,18 @@
     try { localStorage.removeItem(RECURRENCE_GEN_LOCK_KEY); } catch (_) {}
   }
   async function recurringInstanceExistsRemote(uid, stageId, title, iso, markerText){
-    const list = await bxAll("crm.deal.list", {
-      filter: {
-        CATEGORY_ID: CATEGORY_MAIN,
-        ASSIGNED_BY_ID: Number(uid),
-        STAGE_ID: String(stageId),
-        TITLE: String(title),
-        [UF_PRAZO]: String(iso),
-      },
-      select: ["ID","TITLE","ASSIGNED_BY_ID","STAGE_ID", UF_PRAZO, UF_OBS],
-      order: { ID: "DESC" },
-    }).catch(() => []);
-    return (list || []).some((d) => {
-      const obs = String(d && d[UF_OBS] || "");
-      return !!markerText && obs.includes(markerText);
-    });
+    // 1. Verificar cache local primeiro (rápido)
+    const localMarkers = extractMarkersFromDeals(STATE.dealsAll || []);
+    if (localMarkers.has(markerText)) return true;
+    // 2. Verificar no Bitrix (para detectar deals criados por outra aba)
+    try {
+      const res = await bxRaw("crm.deal.list", {
+        filter: { ASSIGNED_BY_ID: uid, ["%" + UF_OBS]: markerText },
+        select: ["ID", UF_OBS]
+      });
+      if (res && res.result && res.result.length > 0) return true;
+    } catch (_) { /* ignorar falha de rede, usar cache */ }
+    return false;
   }
 
   function recurrenceUserIdFromDeal(d){
@@ -2060,10 +2083,12 @@ ${RECURRENCE_PAYLOAD_PREFIX}${enc}` : JSON.stringify(payload);
   }
 
   async function generateRecurringDealsWindow() {
+    if (RECURRENCE_GEN_RUNNING_IN_TAB) return;
+    if (!recurrenceGenLockAcquire()) return;
+    RECURRENCE_GEN_RUNNING_IN_TAB = true;
     const now = Date.now();
     for (const [mk, until] of RECUR_CREATED_KEYS.entries()) { if (Date.now() >= Number(until || 0)) RECUR_CREATED_KEYS.delete(mk); }
-    if (now - STATE.recurLastGenAt < 60 * 1000) return;
-    if (!recurrenceGenLockAcquire()) return;
+    if (now - STATE.recurLastGenAt < 60 * 1000) { RECURRENCE_GEN_RUNNING_IN_TAB = false; recurrenceGenLockRelease(); return; }
     STATE.recurLastGenAt = now;
 
     try {
@@ -2169,6 +2194,7 @@ ${RECURRENCE_PAYLOAD_PREFIX}${enc}` : JSON.stringify(payload);
       }
       setSoftStatus("JS: ok");
     } finally {
+      RECURRENCE_GEN_RUNNING_IN_TAB = false;
       recurrenceGenLockRelease();
     }
   }
@@ -3002,7 +3028,23 @@ restoreSyncQueue();
         const job = SYNC_QUEUE[0];
         if (!job) { SYNC_QUEUE.shift(); persistSyncQueue(); continue; }
         if (job.type === "dealAdd") { const realId = await bx("crm.deal.add", { fields: job.fields }); replaceDealIdLocal(job.tempId, String(realId)); SYNC_QUEUE.shift(); persistSyncQueue(); continue; }
-        if (job.type === "dealUpdate") { if (isTempId(job.dealId)) { SYNC_QUEUE.push(SYNC_QUEUE.shift()); persistSyncQueue(); continue; } await safeDealUpdate(String(job.dealId), job.fields); SYNC_QUEUE.shift(); persistSyncQueue(); continue; }
+        if (job.type === "dealUpdate") {
+          if (isTempId(job.dealId)) {
+            const DEFER_MAX = 15;
+            job._deferCount = (job._deferCount || 0) + 1;
+            if (job._deferCount < DEFER_MAX) {
+              SYNC_QUEUE.push(SYNC_QUEUE.shift());
+            } else {
+              SYNC_QUEUE.shift();
+            }
+            persistSyncQueue();
+            continue;
+          }
+          await safeDealUpdate(String(job.dealId), job.fields);
+          SYNC_QUEUE.shift();
+          persistSyncQueue();
+          continue;
+        }
         if (job.type === "dealDelete") { if (!isTempId(job.dealId)) { try { await bx("crm.deal.delete", { id: String(job.dealId) }); } catch (e) { const msg = String(e && e.message || e || ''); if (!/400/.test(msg)) throw e; } } SYNC_QUEUE.shift(); persistSyncQueue(); continue; }
         if (job.type === "leadUpdate") { await bx("crm.lead.update", { id: String(job.leadId), fields: job.fields }); SYNC_QUEUE.shift(); persistSyncQueue(); continue; }
         if (job.type === "leadDelete") { try { await bx("crm.lead.delete", { id: String(job.leadId) }); } catch (e) { const msg = String(e && e.message || e || ''); if (!/400/.test(msg)) throw e; } SYNC_QUEUE.shift(); persistSyncQueue(); continue; }
@@ -7189,8 +7231,9 @@ function makeUserCard(u) {
         warn.style.display = "none";
         const fromArr = (STATE.leadsByUser.get(String(fromUserId)) || []).slice();
         const i = fromArr.findIndex((l) => String(l.ID) === String(leadId));
+        let lead = null;
         if (i >= 0) {
-          const lead = { ...fromArr[i], ASSIGNED_BY_ID: Number(targetUserId) };
+          lead = { ...fromArr[i], ASSIGNED_BY_ID: Number(targetUserId) };
           fromArr.splice(i, 1);
           STATE.leadsByUser.set(String(fromUserId), fromArr);
           const toArr = (STATE.leadsByUser.get(String(targetUserId)) || []).slice();
@@ -7198,6 +7241,25 @@ function makeUserCard(u) {
           STATE.leadsByUser.set(String(targetUserId), toArr);
         }
         enqueueSync({ type: "leadUpdate", leadId: String(leadId), fields: { ASSIGNED_BY_ID: Number(targetUserId) } });
+        // Transferir follow-ups futuros associados ao lead
+        try {
+          const origId = lead ? leadOrigemId(lead) : String(leadId);
+          const futureFollowups = (STATE.dealsOpen || []).filter(function(d) {
+            return isFollowupDeal(d) &&
+                   getDealLeadOrigemId(d) === origId &&
+                   !isDealDone(d);
+          });
+          for (const fu of futureFollowups) {
+            try {
+              await transferFollowupDealToUser(fu.ID, targetUserId);
+              updateDealInState(fu.ID, { ASSIGNED_BY_ID: String(targetUserId) });
+            } catch (fuErr) {
+              console.warn("[EQD] Falha ao transferir follow-up " + fu.ID + " junto com lead:", fuErr);
+            }
+          }
+        } catch (cascadeErr) {
+          console.warn("[EQD] Falha ao transferir follow-ups em cascata:", cascadeErr);
+        }
         closeModal();
         reopenLeadsModalSafe({ noBackgroundReload: true });
       } catch (e) {
