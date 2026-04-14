@@ -676,7 +676,9 @@
   async function bxAll(method, params = {}) {
     let all = [];
     let start = 0;
-    while (true) {
+    let safety = 0;
+    while (safety < 500) {
+      safety += 1;
       const data = await bxRaw(method, { ...params, start });
       const chunk = data.result || [];
       all = all.concat(chunk);
@@ -1794,7 +1796,7 @@
     // 2. Verificar no Bitrix (para detectar deals criados por outra aba)
     try {
       const res = await bxRaw("crm.deal.list", {
-        filter: { ASSIGNED_BY_ID: uid, ["%" + UF_OBS]: markerText },
+        filter: { ASSIGNED_BY_ID: Number(uid), ["%" + UF_OBS]: markerText },
         select: ["ID", UF_OBS]
       });
       if (res && res.result && res.result.length > 0) return true;
@@ -2031,7 +2033,7 @@ ${RECURRENCE_PAYLOAD_PREFIX}${enc}` : JSON.stringify(payload);
         }
       }
       cursor.setDate(cursor.getDate() + 1);
-      if (untilYmd && ymdKey(cursor) > untilYmd && createdDates.length >= 0) break;
+      if (untilYmd && ymdKey(cursor) > untilYmd && createdDates.length >= 1) break;
     }
 
     let created = 0;
@@ -2160,34 +2162,7 @@ ${RECURRENCE_PAYLOAD_PREFIX}${enc}` : JSON.stringify(payload);
               const newId = await bx("crm.deal.add", { fields });
               markers.add(mk);
               RECUR_CREATED_KEYS.set(mk, Date.now() + 24 * 60 * 60 * 1000);
-              STATE.dealsAll.unshift({
-                ID: String(newId),
-                TITLE: title,
-                STAGE_ID: String(stageId),
-                ASSIGNED_BY_ID: Number(uid),
-                DATE_CREATE: new Date().toISOString(),
-                DATE_MODIFY: new Date().toISOString(),
-                [UF_PRAZO]: iso,
-                [UF_OBS]: fields[UF_OBS],
-                [UF_ETAPA]: fields[UF_ETAPA] || "",
-                [UF_TAREFA]: fields[UF_TAREFA] || "",
-                [UF_URGENCIA]: fields[UF_URGENCIA] || "",
-                [UF_COLAB]: fields[UF_COLAB] || "",
-                _prazo: new Date(iso).toISOString(),
-                _late: false,
-                _urgId: String(fields[UF_URGENCIA] || ""),
-                _urgTxt: "",
-                _tarefaId: String(fields[UF_TAREFA] || ""),
-                _tarefaTxt: "",
-                _etapaId: String(fields[UF_ETAPA] || ""),
-                _etapaTxt: "",
-                _colabId: String(fields[UF_COLAB] || ""),
-                _colabTxt: String(fields[UF_COLAB] || ""),
-                _obs: fields[UF_OBS],
-                _hasObs: true,
-                _assigned: String(uid),
-                _accent: dealAccent({ ID: String(newId), TITLE: title }),
-              });
+              upsertDealLocal(parseLocalDealFromFields(String(newId), fields));
             } catch (_) {
               continue;
             }
@@ -3029,14 +3004,27 @@ restoreSyncQueue();
 
   async function flushSyncQueue() {
     if (SYNC_QUEUE_RUNNING || !SYNC_QUEUE.length) return;
-    if (!acquireTabLock("SYNC", 15000)) { scheduleSyncFlush(1200); return; }
+    if (!acquireTabLock("SYNC", 60000)) { scheduleSyncFlush(1200); return; }
     SYNC_QUEUE_RUNNING = true;
     try {
       squashSyncQueue();
       while (SYNC_QUEUE.length) {
         const job = SYNC_QUEUE[0];
         if (!job) { SYNC_QUEUE.shift(); persistSyncQueue(); continue; }
-        if (job.type === "dealAdd") { const realId = await bx("crm.deal.add", { fields: job.fields }); replaceDealIdLocal(job.tempId, String(realId)); SYNC_QUEUE.shift(); persistSyncQueue(); continue; }
+        if (job.type === "dealAdd") {
+          try {
+            const realId = await bx("crm.deal.add", { fields: job.fields });
+            replaceDealIdLocal(job.tempId, String(realId));
+          } catch (jobErr) {
+            const jobMsg = String(jobErr && jobErr.message || jobErr || '');
+            if (/HTTP 400/i.test(jobMsg)) {
+              showRuntimeWarn('[sync] Criação de deal descartada (HTTP 400): ' + jobMsg.slice(0, 120));
+            } else {
+              throw jobErr;
+            }
+          }
+          SYNC_QUEUE.shift(); persistSyncQueue(); continue;
+        }
         if (job.type === "dealUpdate") {
           if (isTempId(job.dealId)) {
             const DEFER_MAX = 15;
@@ -3066,7 +3054,19 @@ restoreSyncQueue();
           continue;
         }
         if (job.type === "dealDelete") { if (!isTempId(job.dealId)) { try { await bx("crm.deal.delete", { id: String(job.dealId) }); } catch (e) { const msg = String(e && e.message || e || ''); if (!/400/.test(msg)) throw e; } } SYNC_QUEUE.shift(); persistSyncQueue(); continue; }
-        if (job.type === "leadUpdate") { await bx("crm.lead.update", { id: String(job.leadId), fields: job.fields }); SYNC_QUEUE.shift(); persistSyncQueue(); continue; }
+        if (job.type === "leadUpdate") {
+          try {
+            await bx("crm.lead.update", { id: String(job.leadId), fields: job.fields });
+          } catch (jobErr) {
+            const jobMsg = String(jobErr && jobErr.message || jobErr || '');
+            if (/HTTP 400/i.test(jobMsg)) {
+              showRuntimeWarn('[sync] Atualização de lead descartada (HTTP 400): ' + jobMsg.slice(0, 120));
+            } else {
+              throw jobErr;
+            }
+          }
+          SYNC_QUEUE.shift(); persistSyncQueue(); continue;
+        }
         if (job.type === "leadDelete") { try { await bx("crm.lead.delete", { id: String(job.leadId) }); } catch (e) { const msg = String(e && e.message || e || ''); if (!/400/.test(msg)) throw e; } SYNC_QUEUE.shift(); persistSyncQueue(); continue; }
         SYNC_QUEUE.shift(); persistSyncQueue();
       }
@@ -3188,7 +3188,6 @@ restoreSyncQueue();
           await createFollowUpDealForUser(user, nm, prazoIso, extraFields);
         }
         closeModal();
-        renderCurrentView();
         if (opts && opts.returnToLeads) {
           setLeadsCtx(opts.returnToLeads.userId, opts.returnToLeads.kw || "");
           return reopenLeadsModalSafe({ noBackgroundReload: true });
@@ -3922,7 +3921,6 @@ restoreSyncQueue();
     }
   });
   window.addEventListener('pagehide', () => { try { persistSyncQueue(); } catch(_) {} });
-  window.addEventListener('beforeunload', () => { try { persistSyncQueue(); } catch(_) {} });
 
 
   // =========================
@@ -7276,6 +7274,7 @@ function makeUserCard(u) {
               try {
                 const fuPatch = { ASSIGNED_BY_ID: Number(targetUserId) };
                 if (newStageId) fuPatch.STAGE_ID = String(newStageId);
+                if (lead) fuPatch.TITLE = `FOLLOW-UP ${leadTitle(lead)}`;
                 updateDealInState(fu.ID, { ...fuPatch, _assigned: String(targetUserId), DATE_MODIFY: new Date().toISOString() });
                 rebuildDealsOpen();
                 enqueueSync({ type: 'dealUpdate', dealId: String(fu.ID), fields: fuPatch });
