@@ -47,7 +47,8 @@
   const RECURRENCE_WINDOW_DAYS = 120;
   const RECURRENCE_MARKER_RE = /\[RUID=([^\]]+)\]/i;
   const RECURRENCE_GEN_LOCK_KEY = "EQD_RECUR_GEN_LOCK_V2";
-  const RECURRENCE_GEN_LOCK_TTL_MS = 90 * 1000;
+  const RECURRENCE_GEN_LOCK_TTL_MS = 300 * 1000;
+  const RECURRENCE_GEN_COOLDOWN_MS = 5 * 60 * 1000;
   let RECURRENCE_GEN_RUNNING_IN_TAB = false;
 
   // USERS
@@ -648,7 +649,8 @@
           if (resp.status === 400) {
             const body400 = await resp.text().catch(() => "(sem corpo)");
             console.error("[EQD-BX400]", method, JSON.stringify(params || {}).slice(0, 800), "RESP:", body400.slice(0, 800));
-            throw new Error(`HTTP 400 em ${method}: ${body400.slice(0, 600)}`);
+            lastErr = new Error(`HTTP 400 em ${method}: ${body400.slice(0, 600)}`);
+            break; // 400 não é retentável
           }
 
           const data = await resp.json().catch(() => ({}));
@@ -2088,7 +2090,7 @@ ${RECURRENCE_PAYLOAD_PREFIX}${enc}` : JSON.stringify(payload);
     RECURRENCE_GEN_RUNNING_IN_TAB = true;
     const now = Date.now();
     for (const [mk, until] of RECUR_CREATED_KEYS.entries()) { if (Date.now() >= Number(until || 0)) RECUR_CREATED_KEYS.delete(mk); }
-    if (now - STATE.recurLastGenAt < 60 * 1000) { RECURRENCE_GEN_RUNNING_IN_TAB = false; recurrenceGenLockRelease(); return; }
+    if (now - STATE.recurLastGenAt < RECURRENCE_GEN_COOLDOWN_MS) { RECURRENCE_GEN_RUNNING_IN_TAB = false; recurrenceGenLockRelease(); return; }
     STATE.recurLastGenAt = now;
 
     try {
@@ -2823,7 +2825,14 @@ ${curObs}` : transferAlert;
     const open = (STATE.dealsOpen || []);
     const a = all.find(d => String(d.ID) === id);
     const b = open.find(d => String(d.ID) === id);
-    const apply = (d) => { if (d) Object.assign(d, patchFields || {}); };
+    const fields = { ...(patchFields || {}) };
+    if (fields[UF_PRAZO] !== undefined && !('_prazo' in fields)) {
+      const prazoDate = fields[UF_PRAZO] ? new Date(fields[UF_PRAZO]) : null;
+      const prazoOk = prazoDate && !Number.isNaN(prazoDate.getTime());
+      fields._prazo = prazoOk ? prazoDate.toISOString() : "";
+      if (!('_late' in fields)) fields._late = prazoOk ? prazoDate.getTime() < Date.now() : false;
+    }
+    const apply = (d) => { if (d) Object.assign(d, fields); };
     apply(a); apply(b);
   }
 
@@ -3040,7 +3049,18 @@ restoreSyncQueue();
             persistSyncQueue();
             continue;
           }
-          await safeDealUpdate(String(job.dealId), job.fields);
+          try {
+            await safeDealUpdate(String(job.dealId), job.fields);
+          } catch (jobErr) {
+            const jobMsg = String(jobErr && jobErr.message || jobErr || '');
+            if (/HTTP 400/i.test(jobMsg)) {
+              showRuntimeWarn('[sync] Atualização de deal descartada (HTTP 400): ' + jobMsg.slice(0, 120));
+              SYNC_QUEUE.shift();
+              persistSyncQueue();
+              continue;
+            }
+            throw jobErr;
+          }
           SYNC_QUEUE.shift();
           persistSyncQueue();
           continue;
@@ -7241,20 +7261,27 @@ function makeUserCard(u) {
           STATE.leadsByUser.set(String(targetUserId), toArr);
         }
         enqueueSync({ type: "leadUpdate", leadId: String(leadId), fields: { ASSIGNED_BY_ID: Number(targetUserId) } });
-        // Transferir follow-ups futuros associados ao lead
+        // Transferir follow-ups futuros associados ao lead diretamente (sem marcar como concluído)
         try {
           const origId = lead ? leadOrigemId(lead) : String(leadId);
-          const futureFollowups = (STATE.dealsOpen || []).filter(function(d) {
-            return isFollowupDeal(d) &&
-                   getDealLeadOrigemId(d) === origId &&
-                   !isDealDone(d);
-          });
-          for (const fu of futureFollowups) {
-            try {
-              await transferFollowupDealToUser(fu.ID, targetUserId);
-              updateDealInState(fu.ID, { ASSIGNED_BY_ID: String(targetUserId) });
-            } catch (fuErr) {
-              console.warn("[EQD] Falha ao transferir follow-up " + fu.ID + " junto com lead:", fuErr);
+          if (origId) {
+            const targetUser = USERS.find((u) => String(u.userId) === String(targetUserId));
+            const newStageId = targetUser ? await stageIdForUserName(targetUser.name) : null;
+            const futureFollowups = (STATE.dealsOpen || []).filter(function(d) {
+              return isFollowupDeal(d) &&
+                     getDealLeadOrigemId(d) === origId &&
+                     !isDealDone(d);
+            });
+            for (const fu of futureFollowups) {
+              try {
+                const fuPatch = { ASSIGNED_BY_ID: Number(targetUserId) };
+                if (newStageId) fuPatch.STAGE_ID = String(newStageId);
+                updateDealInState(fu.ID, { ...fuPatch, _assigned: String(targetUserId), DATE_MODIFY: new Date().toISOString() });
+                rebuildDealsOpen();
+                enqueueSync({ type: 'dealUpdate', dealId: String(fu.ID), fields: fuPatch });
+              } catch (fuErr) {
+                console.warn("[EQD] Falha ao transferir follow-up " + fu.ID + " junto com lead:", fuErr);
+              }
             }
           }
         } catch (cascadeErr) {
