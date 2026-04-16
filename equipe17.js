@@ -56,7 +56,7 @@
     { name: "Manuela", userId: 813, team: "DELTA" },
     { name: "Maria Clara", userId: 841, team: "DELTA" },
     { name: "Beatriz", userId: 3387, team: "DELTA" },
-    { name: "GEANA", userId: 4367, team: "DELTA" },
+    { name: "Nicole Rodrigues", userId: 4741, team: "DELTA" },
     { name: "Diogo", userId: 1, team: "DELTA" },
 
     { name: "Aline", userId: 15, team: "ALFA" },
@@ -65,10 +65,10 @@
     { name: "Mariana", userId: 23, team: "ALFA" },
     { name: "Josiane", userId: 811, team: "ALFA" },
     { name: "Bruna Luisa", userId: 3081, team: "ALFA" },
+    { name: "Fernanda Silva", userId: 3083, team: "ALFA" },
 
     { name: "Livia Alves", userId: 3079, team: "BETA" },
-    { name: "Fernanda Silva", userId: 3083, team: "BETA" },
-    { name: "Nicolle Belmonte", userId: 3085, team: "BETA" },
+    { name: "Julia Mello", userId: 4743, team: "BETA" },
     { name: "Anna Clara", userId: 3389, team: "BETA" },
 
     { name: "Gabriel", userId: 815, team: "ÔMEGA" },
@@ -82,7 +82,7 @@
   const OMEGA_FOLLOWUP_USERS = new Set(["269", "3101", "29"]);
 
   const SPECIAL_PANEL_USERS = new Set([
-    "3079", "3083", "3085", "3389",
+    "3079", "3083", "3389", "4741",
     "1", "15", "19", "17", "23", "811", "3081",
   ]);
 
@@ -1038,7 +1038,7 @@
     return Object.keys(wanted).every((k) => normDateCompareEq(src[k], wanted[k]));
   }
 
-  const LOCAL_DEAL_PATCH_TTL_MS = 15000;
+  const LOCAL_DEAL_PATCH_TTL_MS = 30000;
   function localDealPatchKey(dealId){ return `deal:${String(dealId || "")}`; }
   function registerLocalDealPatch(dealId, fields, ttlMs = LOCAL_DEAL_PATCH_TTL_MS) {
     const id = String(dealId || '').trim();
@@ -1101,6 +1101,7 @@
 
   async function safeDealUpdate(dealId, fields) {
     const id = String(dealId);
+    if (isTempId(id)) { console.warn('[EQD] safeDealUpdate: ignorando ID temporário', id); return; }
     // Remover campos undefined/null para evitar HTTP 400
     const fieldsToSend = Object.fromEntries(
       Object.entries(fields || {}).filter(([, v]) => v !== undefined && v !== null)
@@ -1108,17 +1109,22 @@
     registerLocalDealPatch(id, fieldsToSend);
     try {
       const out = await bx("crm.deal.update", { id, fields: fieldsToSend });
-      registerLocalDealPatch(id, fieldsToSend, 12000);
+      registerLocalDealPatch(id, fieldsToSend, 60000);
       return out;
     } catch (e) {
       const msg = String((e && e.message) || e || "");
       if (!/HTTP 400\s+em\s+crm\.deal\.update/i.test(msg)) throw e;
 
+      if (/not found/i.test(msg)) {
+        console.warn('[EQD] safeDealUpdate: deal não encontrado, descartando:', id, msg.slice(0, 120));
+        return;
+      }
+
       const verify = async () => {
         try {
           const fresh = await bx("crm.deal.get", { id });
           if (dealFieldsMatchRequested(fresh, fieldsToSend)) {
-            registerLocalDealPatch(id, fieldsToSend, 12000);
+            registerLocalDealPatch(id, fieldsToSend, 60000);
             return true;
           }
           return false;
@@ -1132,7 +1138,7 @@
       if (await verify()) return true;
       try {
         const out = await bx("crm.deal.update", { id, fields: fieldsToSend });
-        registerLocalDealPatch(id, fieldsToSend, 12000);
+        registerLocalDealPatch(id, fieldsToSend, 60000);
         return out;
       } catch (_) {}
       await new Promise((r) => setTimeout(r, 420));
@@ -1561,7 +1567,9 @@
   function saveCache() {
     try {
       normalizeDealsState();
-      localStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), dealsAll: STATE.dealsAll, lastDealsSyncAt: STATE.lastDealsSyncAt || null, lastFullDealsSyncAt: Number(STATE.lastFullDealsSyncAt || 0) || 0, dealsLoadedMode: STATE.dealsLoadedMode || "full" }));
+      const photos = {};
+      STATE.userPhotoById.forEach((url, id) => { if (url) photos[id] = url; });
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), dealsAll: STATE.dealsAll, lastDealsSyncAt: STATE.lastDealsSyncAt || null, lastFullDealsSyncAt: Number(STATE.lastFullDealsSyncAt || 0) || 0, dealsLoadedMode: STATE.dealsLoadedMode || "full", userPhotos: photos }));
     } catch (_) {}
   }
   function loadCache() {
@@ -1574,6 +1582,9 @@
       if (j.lastDealsSyncAt) STATE.lastDealsSyncAt = String(j.lastDealsSyncAt);
       if (Number(j.lastFullDealsSyncAt || 0) > 0) STATE.lastFullDealsSyncAt = Number(j.lastFullDealsSyncAt || 0);
       if (j.dealsLoadedMode === "open" || j.dealsLoadedMode === "full") STATE.dealsLoadedMode = j.dealsLoadedMode;
+      if (j.userPhotos && typeof j.userPhotos === 'object') {
+        Object.entries(j.userPhotos).forEach(([id, url]) => { if (url) STATE.userPhotoById.set(Number(id), String(url)); });
+      }
       normalizeDealsState();
       return true;
     } catch (_) { return false; }
@@ -2710,6 +2721,8 @@ ${curObs}` : transferAlert;
       tags.push(`<span class="eqd-tag eqd-tagClickable" data-action="linkedLeadTogglePessoal" data-dealid="${deal.ID}" style="background:${pesOn ? "#dcfce7" : "#6b7280"};color:${pesOn ? "#166534" : "#fff"}">${pesOn ? "WPP DIRETO" : "WPP DIRETO NÃO"}</span>`);
       const doneCount = countDoneFollowupsForLeadOrig(linkedLeadOrig);
       if (doneCount) tags.push(`<span class="eqd-tag">FUs concluídos: ${doneCount}</span>`);
+      const futureCount = countOpenFutureFollowupsForLeadOrig(linkedLeadOrig, deal.ID);
+      if (futureCount > 0) tags.push(`<span class="eqd-tag">FUs futuros: ${futureCount}</span>`);
     }
 
     const batchBox = context && context.allowBatch
@@ -5428,7 +5441,7 @@ restoreSyncQueue();
     openModal("Legenda", `<div style="display:flex;flex-direction:column;gap:8px;font-size:12px;font-weight:900"><div>🟢 Sem atraso</div><div>🟡 1 ou 2 atrasos</div><div>🟣 3 atrasos</div><div>🔴 4 ou mais atrasos</div></div>`);
   }
 
-  const MARKETING_MEMBERS = ["1","3079","3085","3081","3387","4367"];
+  const MARKETING_MEMBERS = ["1","3079","3081","3387"];
 const MARKETING_LOGO_URL = "https://bitrix24public.com/b24-6iyx5y.bitrix24.com.br/docs/pub/068f88c3fbd011deee71377532b727e5/showFile?token=0qvknd15el8g";
 
 
@@ -5526,7 +5539,7 @@ async function completeMarketingGroup(group, selectedDateStr = '', monthAnchorSt
 async function openMarketingGroupEditModal(group, selectedDateStr = '', monthAnchorStr = '') {
   if (!group || !Array.isArray(group.ids) || !group.ids.length) return;
   const members = USERS.filter((u) => MARKETING_MEMBERS.includes(String(u.userId)));
-  const memberColorMap = { "1":"#111827", "3079":"#7c3aed", "3085":"#0f766e", "3081":"#b45309", "3387":"#be185d", "4367":"#1d4ed8" };
+  const memberColorMap = { "1":"#111827", "3079":"#7c3aed", "3081":"#b45309", "3387":"#be185d" };
   const typeTags = ["GRAVAÇÃO","REUNIÃO","ROTEIRO","EDIÇÃO DE VIDEO","FOTOGRAFIA","OUTROS","PAUTA"];
   const meta = await ensureDealFieldsMeta().catch(() => null);
   const tipoItemsRaw = meta ? getFieldItemsFromMeta(meta, 'UF_CRM_1768185018696') : [];
@@ -5604,7 +5617,7 @@ async function openMarketingGroupEditModal(group, selectedDateStr = '', monthAnc
 function openMarketingPanelStub(selectedDateStr = "", monthAnchorStr = "") {
   const typeTags = ["GRAVAÇÃO","REUNIÃO","ROTEIRO","EDIÇÃO DE VIDEO","FOTOGRAFIA","OUTROS","PAUTA"];
   const members = USERS.filter((u) => MARKETING_MEMBERS.includes(String(u.userId)));
-  const memberColorMap = { "1":"#111827", "3079":"#7c3aed", "3085":"#0f766e", "3081":"#b45309", "3387":"#be185d", "4367":"#1d4ed8" };
+  const memberColorMap = { "1":"#111827", "3079":"#7c3aed", "3081":"#b45309", "3387":"#be185d" };
   const today = new Date();
   const hasSelectedDay = !!selectedDateStr;
   const selected = hasSelectedDay ? (tryParseDateAny(`${selectedDateStr} 00:00`) || today) : today;
@@ -6437,8 +6450,8 @@ function makeUserCard(u) {
     }
   }
 
-  function renderCurrentView() {
-    if (Date.now() < UI_REFRESH_HOLD_UNTIL && el && el.modalOverlay && el.modalOverlay.style.display !== "flex") return;
+  function renderCurrentView(force = false) {
+    if (!force && Date.now() < UI_REFRESH_HOLD_UNTIL && el && el.modalOverlay && el.modalOverlay.style.display !== "flex") return;
     if (currentView.kind === "general") return renderGeneral();
     if (currentView.kind === "user") return renderUserPanel(currentView.userId);
     if (currentView.kind === "multi") return renderMultiColumns(currentView.multi || []);
@@ -7151,6 +7164,8 @@ function makeUserCard(u) {
       return reopenLeadsModalSafe({ noBackgroundReload: true });
     }
     if (target === String(sPerdido) && ["29","3101","269"].includes(uid)) {
+      const origemForDeleteOmega = leadOrigemId(cur || arr[i] || {}) || String(leadId);
+      await deleteFutureFollowupsForLeadOrig(origemForDeleteOmega);
       await routeLeadToCategory(uid, leadId, 23, target);
       return reopenLeadsModalSafe({ noBackgroundReload: true });
     }
@@ -8952,7 +8967,7 @@ document.addEventListener("click", async (e) => {
 
       if (act === "backToPrevious") {
         currentView = popView();
-        return renderCurrentView();
+        return renderCurrentView(true);
       }
 
       if (act === "newTaskModal") {
@@ -9023,7 +9038,7 @@ document.addEventListener("click", async (e) => {
       if (act === "leadsModal") {
         const uid = String(userId||"");
         if (!uid) return;
-        return openLeadsModalForUser(uid, "", { useCache: true, noBackgroundReload: true });
+        return openLeadsModalForUser(uid, "", { useCache: true });
       }
 
       if (act === "leadDelete") {
