@@ -68,7 +68,7 @@
     { name: "Fernanda Silva", userId: 3083, team: "ALFA" },
 
     { name: "Livia Alves", userId: 3079, team: "BETA" },
-    { name: "Julia Mello", userId: 4743, team: "BETA" },
+    { name: "FUTURA PROFISSIONAL", userId: 4743, team: "BETA" },
     { name: "Anna Clara", userId: 3389, team: "BETA" },
 
     { name: "Gabriel", userId: 815, team: "ÔMEGA" },
