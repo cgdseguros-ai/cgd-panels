@@ -1539,7 +1539,7 @@
   let sparkleUntil = 0;
   let selectedCompetence = "current";
   let hiddenSellerIds = new Set(
-    (JSON.parse(localStorage.getItem("cgd_hidden_sellers") || "[]") || []).map(Number)
+    JSON.parse(localStorage.getItem("cgd_hidden_sellers") || "[]").map(Number)
   );
   function saveHiddenSellerIds(){
     localStorage.setItem("cgd_hidden_sellers", JSON.stringify(Array.from(hiddenSellerIds)));
