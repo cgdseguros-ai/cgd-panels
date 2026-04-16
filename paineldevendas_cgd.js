@@ -495,30 +495,6 @@
       white-space:nowrap;
     }
 
-    .footerZero{
-      position: static;
-      margin-top: 8px;
-      padding: 10px 12px;
-      border:1px solid rgba(0,0,0,.08);
-      border-radius: 16px;
-      background: #ffffff;
-      box-shadow: 0 12px 28px rgba(0,0,0,.10);
-    }
-
-    .zeroRow{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-    .zeroChip{
-      display:flex;
-      align-items:center;
-      gap:8px;
-      padding:8px 10px;
-      border-radius: 999px;
-      border:1px solid rgba(0,0,0,.10);
-      background: #ffffff;
-      user-select:none;
-    }
-    .zeroChip .avatar{ width:28px; height:28px; }
-    .zeroName{ font-size:13px; font-weight:800; color: #1f2a44; max-width:160px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-
     .hint{
       color: rgba(31,42,68,.70);
       font-size:13px;
@@ -717,6 +693,66 @@
     }
     .bottomRight{ justify-content:flex-end; gap:20px; }
     .corpBox{ min-width:0; }
+    .hideWrap{ position: relative; }
+    .hidePanel{
+      position:absolute;
+      top: calc(100% + 8px);
+      right: 0;
+      min-width: 280px;
+      border-radius: 14px;
+      border:1px solid rgba(0,0,0,.10);
+      background: #ffffff;
+      box-shadow: 0 18px 44px rgba(0,0,0,.35);
+      overflow:hidden;
+      display:none;
+      z-index: 50;
+    }
+    .hpHead{
+      padding:10px 12px;
+      border-bottom: 1px solid rgba(0,0,0,.08);
+      font-size: 13px;
+      color: #1f2a44;
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:8px;
+    }
+    .hpList{ max-height: 340px; overflow:auto; }
+    .hpItem{
+      padding:10px 12px;
+      display:flex;
+      align-items:center;
+      gap:8px;
+      cursor:pointer;
+      border-bottom: 1px solid rgba(0,0,0,.06);
+      font-size:14px;
+      color:#1f2a44;
+      user-select:none;
+    }
+    .hpItem:hover{ background: rgba(0,0,0,.04); }
+    .kpiGrid{
+      display:grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap:10px;
+      margin-bottom:14px;
+    }
+    .kpiCard{
+      border:1px solid rgba(0,0,0,.10);
+      border-radius:14px;
+      padding:12px;
+      background: #f9f9f9;
+    }
+    .kpiCard b{ display:block; font-size:12px; color:rgba(31,42,68,.70); margin-bottom:4px; }
+    .kpiCard span{ font-size:18px; font-weight:950; color:#1f2a44; }
+    .compBadge{
+      display:inline-block;
+      font-size:11px;
+      background:#1f2a44;
+      color:#fff;
+      border-radius:999px;
+      padding:2px 8px;
+      margin-bottom:6px;
+    }
   `;
 
   const html = `
@@ -778,6 +814,20 @@
           <button class="btn btnAdm" id="admMetas">ADM (Metas)</button>
           <button class="btn btnAdm" id="admBonifRanking">BONIFICAÇÃO (ADM)</button>
           <button class="btn btnAdm" id="admDoneAll">CONCLUÍDAS (ADM)</button>
+          <button class="btn" id="admAnalise">ANÁLISE</button>
+          <div class="hideWrap">
+            <button class="btn" id="hideBtn">Ocultar cards</button>
+            <div class="hidePanel" id="hidePanel">
+              <div class="hpHead">
+                <span>Ocultar/Mostrar cards</span>
+                <button class="btn" id="hpClose" style="padding:4px 8px;font-size:12px;">✕</button>
+              </div>
+              <div class="hpList" id="hpList"></div>
+            </div>
+          </div>
+          <select class="sel" id="compFilter" title="Filtrar por competência">
+            <option value="current">Mês atual</option>
+          </select>
           <button class="btn" id="clearSearch">Limpar</button>
           <button class="btn" id="refreshNow">Atualizar agora</button>
         </div>
@@ -787,11 +837,6 @@
     <main>
       <div class="gridTop" id="gridTop"></div>
       <div class="gridRest" id="gridRest"></div>
-
-      <div class="footerZero" id="footerZero" style="display:none;">
-        <div style="margin:0 0 8px 0; font-size:14px; opacity:.9;">Usuários com <b>0</b> em andamento</div>
-        <div class="zeroRow" id="zeroRow"></div>
-      </div>
 
       <div class="hint">
         <span>F11 = tela cheia</span>
@@ -859,8 +904,9 @@
   const PROXY_URL = "https://muddy-king-6632.cgdseguros.workers.dev/?url=";
   const BITRIX_WEBHOOK_BASE = "https://b24-6iyx5y.bitrix24.com.br/rest/1/w84d3lpz7hwutyeb/";
 
-  const OPERATOR_FIELD = "UF_CRM_1731877451385";
+  const OPERATOR_FIELD = "UF_CRM_1771388467";
   const CLOSEDATE_FIELD = "UF_CRM_1731899421651";
+  const SOURCE_FIELD = "UF_CRM_1767283877974";
   const CATEGORY_ID_MAIN = 0;
 
   const ADMIN_PASS = "4627";
@@ -907,6 +953,8 @@
     { label: "USER 3085", userId: 3085 },
     { label: "USER 3387", userId: 3387 },
     { label: "USER 3389", userId: 3389 },
+    { label: "JULIA MELLO",      userId: 4743 },
+    { label: "NICOLE RODRIGUES", userId: 4741 },
   ];
 
   const SEARCH_ONLY_USERS = [
@@ -920,10 +968,11 @@
   const $err = document.getElementById("err");
   const $q = document.getElementById("q");
   const $hintCount = document.getElementById("hintCount");
-  const $footerZero = document.getElementById("footerZero");
-  const $zeroRow = document.getElementById("zeroRow");
   const $dotStatus = document.getElementById("dotStatus");
   const $loadStatus = document.getElementById("loadStatus");
+  const $compFilter = document.getElementById("compFilter");
+  const $hidePanel = document.getElementById("hidePanel");
+  const $hpList = document.getElementById("hpList");
 
   const $modalBack = document.getElementById("modalBack");
   const $modalClose = document.getElementById("modalClose");
@@ -1156,6 +1205,7 @@
   let operatorMap = null;
   let stageMap = null;
   let sourceMap = null;
+  let sourceCustomMap = null;
   let userCacheById = {};
 
   async function loadOperatorMap(){
@@ -1181,6 +1231,13 @@
         map[s.STATUS_ID] = s.NAME;
       }
     }
+    return map;
+  }
+  async function loadSourceMap(){
+    const fields = await bx("crm.deal.fields", {});
+    const f = fields[SOURCE_FIELD];
+    const map = {};
+    if (f && f.items) for (const it of f.items) map[it.ID] = it.VALUE;
     return map;
   }
   async function loadAllActiveUsers(){
@@ -1237,7 +1294,7 @@
     while (true){
       const data = await bxRaw("crm.deal.list", {
         filter:{ ASSIGNED_BY_ID:userId, CATEGORY_ID: categoryId, ...extraFilter },
-        select: ["ID","TITLE","STAGE_ID",OPERATOR_FIELD,"OPPORTUNITY","CURRENCY_ID","SOURCE_ID", CLOSEDATE_FIELD, BONIF_FIELD, ...select],
+        select: ["ID","TITLE","STAGE_ID",OPERATOR_FIELD,"OPPORTUNITY","CURRENCY_ID","SOURCE_ID", CLOSEDATE_FIELD, BONIF_FIELD, SOURCE_FIELD, ...select],
         start
       });
 
@@ -1480,13 +1537,52 @@
   let bellUntilBySellerId = {};
   let lastSorteioPct = null;
   let sparkleUntil = 0;
+  let selectedCompetence = "current";
+  let hiddenSellerIds = new Set(
+    JSON.parse(localStorage.getItem("cgd_hidden_sellers") || "[]").map(Number)
+  );
+  function saveHiddenSellerIds(){
+    localStorage.setItem("cgd_hidden_sellers", JSON.stringify(Array.from(hiddenSellerIds)));
+  }
+  function updateHideButton(){
+    const btn = document.getElementById("hideBtn");
+    if (!btn) return;
+    const n = hiddenSellerIds.size;
+    btn.textContent = n > 0 ? `Ocultar cards (${n} ocultos)` : "Ocultar cards";
+  }
+  function renderHidePanel(){
+    if (!$hpList) return;
+    const all = getAllVisibleUsersForCards();
+    $hpList.innerHTML = all.map(s => {
+      const sid = Number(s.userId||0);
+      const hidden = hiddenSellerIds.has(sid);
+      return `<div class="hpItem" data-hid="${sid}">
+        <input type="checkbox" ${hidden ? "" : "checked"} style="width:16px;height:16px;flex:0 0 auto;pointer-events:none;" />
+        <span>${escHtml(s.label)}</span>
+      </div>`;
+    }).join("");
+    $hpList.querySelectorAll(".hpItem").forEach(el => {
+      el.addEventListener("click", () => {
+        const sid = Number(el.getAttribute("data-hid"));
+        if (hiddenSellerIds.has(sid)) hiddenSellerIds.delete(sid);
+        else hiddenSellerIds.add(sid);
+        saveHiddenSellerIds();
+        renderHidePanel();
+        updateHideButton();
+        renderAll();
+      });
+    });
+  }
+  function getVisibleSellersForRender(){
+    return getAllVisibleUsersForCards().filter(s => !hiddenSellerIds.has(Number(s.userId)));
+  }
 
   function mapDealToItem(d, sellerLabel, sellerId){
     const stageName = stageMap[d.STAGE_ID]||"";
     const opName = operatorMap[d[OPERATOR_FIELD]]||"—";
     const opportunity = parseBRNumber(d.OPPORTUNITY);
-    const rawSource = d.SOURCE_ID || "";
-    const srcName = (sourceMap && rawSource && sourceMap[rawSource]) ? sourceMap[rawSource] : (rawSource || "—");
+    const rawSource = d[SOURCE_FIELD] || "";
+    const srcName = (sourceCustomMap && rawSource && sourceCustomMap[rawSource]) ? sourceCustomMap[rawSource] : (rawSource || "—");
     const comp = normYYYYMM(yyyymmFromAnyDateStr(d[CLOSEDATE_FIELD] || null));
     const bonif = parseBRNumber(d[BONIF_FIELD]);
 
@@ -1572,13 +1668,28 @@
     return n;
   }
 
-  function buildRankingMap(){
-    const sellers = getAllVisibleUsersForCards().slice();
+  function getStatsForSellerCompetence(sellerId, yyyymm){
+    const ym = normYYYYMM(yyyymm) || nowYYYYMM();
+    if (ym === nowYYYYMM()){
+      return statsBySellerId[sellerId] || { andamentoQtd:0, andamentoValor:0, docsQtd:0, pagQtd:0, metaMes:0, metaPct:0, produzidoMes:0 };
+    }
+    const meta = getMeta(ym, sellerId);
+    const list = (closedWonBySellerId[sellerId] || []).filter(it => normYYYYMM(it.competence) === ym);
+    const produzidoMes = list.reduce((s,it)=> s + (Number(it.opportunity)||0), 0);
+    const metaPct = meta > 0 ? (produzidoMes / meta) * 100 : 0;
+    return { andamentoQtd:0, andamentoValor:0, docsQtd:0, pagQtd:0, metaMes:meta, metaPct, produzidoMes };
+  }
+
+  function buildRankingMap(yyyymm){
+    const ym = normYYYYMM(yyyymm) || nowYYYYMM();
+    const sellers = getVisibleSellersForRender().slice();
     sellers.sort((a,b)=>{
-      const pa = (statsBySellerId[a.userId]?.produzidoMes || 0);
-      const pb = (statsBySellerId[b.userId]?.produzidoMes || 0);
-      const ia = (statsBySellerId[a.userId]?.andamentoValor || 0);
-      const ib = (statsBySellerId[b.userId]?.andamentoValor || 0);
+      const stA = getStatsForSellerCompetence(Number(a.userId), ym);
+      const stB = getStatsForSellerCompetence(Number(b.userId), ym);
+      const pa = stA.produzidoMes || 0;
+      const pb = stB.produzidoMes || 0;
+      const ia = stA.andamentoValor || 0;
+      const ib = stB.andamentoValor || 0;
       return pb - pa || ib - ia || a.label.localeCompare(b.label,"pt-BR");
     });
     const rankMap = new Map();
@@ -1598,100 +1709,75 @@
     return "";
   }
 
-  function renderCard(container, seller, rankMap){
+  function renderCard(container, seller, rankMap, yyyymm){
     const sid = Number(seller.userId||0);
-    const st = statsBySellerId[sid] || { andamentoQtd:0, andamentoValor:0, docsQtd:0, pagQtd:0, metaMes:0, metaPct:0 };
+    const ym = normYYYYMM(yyyymm) || nowYYYYMM();
+    const isCurrentMonth = ym === nowYYYYMM();
+    const st = getStatsForSellerCompetence(sid, ym);
     const pctTxt = st.metaMes > 0 ? `${st.metaPct.toFixed(1)}%` : `${(st.metaPct||0).toFixed(1)}%`;
-
     const rank = Number(rankMap.get(sid) || 0);
     const rankClass = rank === 1 ? " rank1" : rank === 2 ? " rank2" : rank === 3 ? " rank3" : "";
-    const showBell = (bellUntilBySellerId[sid] || 0) > Date.now();
+    const showBell = isCurrentMonth && (bellUntilBySellerId[sid] || 0) > Date.now();
+    const compBadge = !isCurrentMonth ? `<div class="compBadge">${escHtml(ym)}</div>` : "";
+    const histContratos = isCurrentMonth ? 0 : (closedWonBySellerId[sid]||[]).filter(it=>normYYYYMM(it.competence)===ym).length;
     const card = document.createElement("section");
     card.className = `card${rankClass}`;
     card.innerHTML = `
       ${showBell ? '<div class="bellBadge">🔔</div>' : ''}
-      ${showBell ? '<div class="bellBadge">🔔</div>' : ''}
       <div class="head">
+        ${compBadge}
         <div class="titleRow">
           <div class="colTitle">
             <div class="avatar" data-avatar="1"></div>
-            <div class="rankBadge">${medalForRank(rankMap.get(sid) || 0) ? `<span class="medal">${medalForRank(rankMap.get(sid) || 0)}</span>` : ""}<span>#${rankMap.get(sid) || "—"}</span></div>
+            <div class="rankBadge">${medalForRank(rank) ? `<span class="medal">${medalForRank(rank)}</span>` : ""}<span>#${rank || "—"}</span></div>
             <div class="name">${escHtml(seller.label)}</div>
           </div>
-
         </div>
-
         <div class="stats">
-          <div class="stat"><b>Em andamento</b><span>${st.andamentoQtd}</span></div>
-          <div class="stat"><b>Valor a implantar</b><span class="money">${fmtMoney(st.andamentoValor,"BRL")}</span></div>
-
-          <div class="stat"><b>Aguard. docs</b><span>${st.docsQtd}</span></div>
-          <div class="stat"><b>Aguard. pagamento</b><span>${st.pagQtd}</span></div>
-
+          ${isCurrentMonth ? `
+            <div class="stat"><b>Em andamento</b><span>${st.andamentoQtd}</span></div>
+            <div class="stat"><b>Valor a implantar</b><span class="money">${fmtMoney(st.andamentoValor,"BRL")}</span></div>
+            <div class="stat"><b>Aguard. docs</b><span>${st.docsQtd}</span></div>
+            <div class="stat"><b>Aguard. pagamento</b><span>${st.pagQtd}</span></div>
+          ` : `
+            <div class="stat" style="grid-column:span 2"><b>Produzido no mês</b><span class="money">${fmtMoney(st.produzidoMes,"BRL")}</span></div>
+            <div class="stat"><b>Contratos</b><span>${histContratos}</span></div>
+            <div class="stat"></div>
+          `}
           <div class="stat"><b>% da meta</b><span class="money">${pctTxt}</span></div>
           <div class="stat"><b>Meta do mês</b><span class="money">${st.metaMes ? fmtMoney(st.metaMes,"BRL") : "—"}</span></div>
         </div>
-
         <div class="btnRow">
-          <button class="miniBtn" data-list="1">LISTA</button>
+          ${isCurrentMonth ? `<button class="miniBtn" data-list="1">LISTA</button>` : ""}
           <button class="miniBtn" data-done="1">CONCLUÍDAS</button>
         </div>
       </div>
     `;
     container.appendChild(card);
-
     renderAvatar(card.querySelector('[data-avatar="1"]'), seller);
-    card.querySelector('[data-list="1"]').addEventListener("click", ()=>openInProgressList(sid));
+    if (isCurrentMonth) card.querySelector('[data-list="1"]').addEventListener("click", ()=>openInProgressList(sid));
     card.querySelector('[data-done="1"]').addEventListener("click", ()=>openConcluidasForSeller(sid));
-  }
-
-  function renderZeroFooter(zeroSellers){
-    $zeroRow.innerHTML = "";
-    if (!zeroSellers.length){
-      $footerZero.style.display = "none";
-      return;
-    }
-    $footerZero.style.display = "block";
-
-    for (const s of zeroSellers){
-      const chip = document.createElement("div");
-      chip.className = "zeroChip";
-      chip.innerHTML = `
-        <div class="avatar" data-z="1"></div>
-        <div class="zeroName">${escHtml(s.label)}</div>
-      `;
-      renderAvatar(chip.querySelector('[data-z="1"]'), s);
-      $zeroRow.appendChild(chip);
-    }
   }
 
   function renderAll(){
     $gridTop.innerHTML = "";
     $gridRest.innerHTML = "";
 
-    const sellers = getAllVisibleUsersForCards();
-    const rankMap = buildRankingMap();
+    const ym = selectedCompetence === "current" ? nowYYYYMM() : (normYYYYMM(selectedCompetence) || nowYYYYMM());
+    const sellers = getVisibleSellersForRender();
+    const rankMap = buildRankingMap(ym);
     sellers.sort((a,b)=>{
       const ra = rankMap.get(Number(a.userId)) || 999;
       const rb = rankMap.get(Number(b.userId)) || 999;
       return ra - rb || a.label.localeCompare(b.label,"pt-BR");
     });
 
-    const eligibleTop = sellers.filter(s=>{
-      const st = statsBySellerId[s.userId] || {};
-      return (st.andamentoQtd||0) > 0 || (st.metaPct||0) > 0;
-    });
+    const top12 = sellers.slice(0, 12);
+    const rest = sellers.slice(12);
 
-    const nonZero = sellers.filter(s => (statsBySellerId[s.userId]?.andamentoQtd || 0) > 0);
-    const zero = sellers.filter(s => (statsBySellerId[s.userId]?.andamentoQtd || 0) === 0);
+    for (const s of top12) renderCard($gridTop, s, rankMap, ym);
+    for (const s of rest) renderCard($gridRest, s, rankMap, ym);
 
-    const top12 = eligibleTop.slice(0, 12);
-    const rest = nonZero.filter(s=> !top12.some(t=>t.userId===s.userId));
-
-    for (const s of top12) renderCard($gridTop, s, rankMap);
-    for (const s of rest) renderCard($gridRest, s, rankMap);
-
-    renderZeroFooter(zero);
     updateHintCount();
     $dotStatus.className = "dot";
   }
@@ -1699,6 +1785,24 @@
   function updateHintCount(){
     const q = normalizeText($q.value);
     $hintCount.textContent = q ? `Busca ativa: ${countSearchMatches(q)} resultado(s)` : `Busca: —`;
+  }
+
+  function updateCompFilterOptions(){
+    if (!$compFilter) return;
+    const compSet = new Set();
+    for (const sid of Object.keys(closedWonBySellerId)){
+      for (const it of (closedWonBySellerId[sid]||[])){
+        const c = normYYYYMM(it.competence);
+        if (c) compSet.add(c);
+      }
+    }
+    const comps = Array.from(compSet).sort().reverse().slice(0, 13);
+    const curVal = $compFilter.value;
+    $compFilter.innerHTML = `<option value="current">Mês atual</option>` +
+      comps.map(c=>`<option value="${c}">${c}</option>`).join("");
+    if (curVal && curVal !== "current" && comps.includes(curVal)){
+      $compFilter.value = curVal;
+    }
   }
 
   /* ================= BUSCA ================= */
@@ -1762,6 +1866,26 @@
   });
   $q.addEventListener("focus", ()=>{
     if (normalizeText($q.value)) renderSearchPanel();
+  });
+
+  $compFilter.addEventListener("change", ()=>{
+    selectedCompetence = $compFilter.value;
+    renderAll();
+    updateSorteioBar();
+  });
+
+  document.getElementById("hideBtn").addEventListener("click", (e)=>{
+    e.stopPropagation();
+    const visible = $hidePanel.style.display === "block";
+    $hidePanel.style.display = visible ? "none" : "block";
+    if (!visible) renderHidePanel();
+  });
+  document.getElementById("hpClose").addEventListener("click", (e)=>{
+    e.stopPropagation();
+    $hidePanel.style.display = "none";
+  });
+  document.addEventListener("click", (e)=>{
+    if (!e.target.closest(".hideWrap")) $hidePanel.style.display = "none";
   });
 
   /* ================= LISTA ================= */
@@ -2249,6 +2373,102 @@
     ctx.fillText("Fontes", cx, cy);
   }
 
+  function drawPieLabeled(canvas, slices, centerText){
+    const ctx = canvas.getContext("2d");
+    const w = canvas.width, h = canvas.height;
+    const cx = w/2, cy = h/2;
+    const r = Math.min(w,h)*0.42;
+    ctx.clearRect(0,0,w,h);
+    const total = slices.reduce((s,x)=>s + x.value, 0) || 1;
+    let a = -Math.PI/2;
+    for (let i=0;i<slices.length;i++){
+      const frac = slices[i].value / total;
+      const a2 = a + frac * Math.PI*2;
+      const hue = (i * 57) % 360;
+      ctx.fillStyle = `hsl(${hue} 70% 55%)`;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.arc(cx, cy, r, a, a2);
+      ctx.closePath();
+      ctx.fill();
+      a = a2;
+    }
+    ctx.fillStyle = "rgba(0,0,0,.35)";
+    ctx.beginPath();
+    ctx.arc(cx, cy, r*0.58, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = "#fff";
+    ctx.font = "bold 12px system-ui, Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(centerText || "—", cx, cy);
+  }
+
+  function drawBarChart(canvas, data){
+    const ctx = canvas.getContext("2d");
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.width / dpr;
+    const h = canvas.height / dpr;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!data.length){
+      ctx.fillStyle = "#888";
+      ctx.font = `${14*dpr}px system-ui`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("Sem dados", canvas.width/2, canvas.height/2);
+      return;
+    }
+    const padL = 60*dpr, padR = 16*dpr, padT = 30*dpr, padB = 40*dpr;
+    const chartW = canvas.width - padL - padR;
+    const chartH = canvas.height - padT - padB;
+    const maxVal = Math.max(...data.map(d=>d.value), 1);
+    const barW = chartW / data.length;
+    const barPad = Math.max(2*dpr, barW * 0.15);
+    ctx.strokeStyle = "rgba(0,0,0,.08)";
+    ctx.lineWidth = dpr;
+    const steps = 4;
+    for (let i=0;i<=steps;i++){
+      const y = padT + chartH - (i/steps)*chartH;
+      ctx.beginPath();
+      ctx.moveTo(padL, y);
+      ctx.lineTo(padL+chartW, y);
+      ctx.stroke();
+      ctx.fillStyle = "rgba(0,0,0,.55)";
+      ctx.font = `${10*dpr}px system-ui`;
+      ctx.textAlign = "right";
+      ctx.textBaseline = "middle";
+      const val = (maxVal * i/steps);
+      const valStr = val >= 1000000 ? `${(val/1000000).toFixed(1)}M` : val >= 1000 ? `${(val/1000).toFixed(0)}k` : val.toFixed(0);
+      ctx.fillText(valStr, padL - 4*dpr, y);
+    }
+    data.forEach((d, i)=>{
+      const bh = (d.value / maxVal) * chartH;
+      const x = padL + i * barW + barPad;
+      const bwActual = barW - barPad*2;
+      const y = padT + chartH - bh;
+      const hue = (i * 47) % 360;
+      ctx.fillStyle = `hsl(${hue} 65% 55%)`;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(x, y, bwActual, bh, 3*dpr);
+      else ctx.rect(x, y, bwActual, bh);
+      ctx.fill();
+      if (d.value > 0){
+        ctx.fillStyle = "#1f2a44";
+        ctx.font = `bold ${10*dpr}px system-ui`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "bottom";
+        const valStr = d.value >= 1000000 ? `${(d.value/1000000).toFixed(1)}M` : d.value >= 1000 ? `${(d.value/1000).toFixed(1)}k` : d.value.toFixed(0);
+        ctx.fillText(valStr, x + bwActual/2, y - 2*dpr);
+      }
+      ctx.fillStyle = "rgba(0,0,0,.65)";
+      ctx.font = `${10*dpr}px system-ui`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      const label = String(d.comp || "").replace(/^(\d{4})-(\d{2})$/, "$2/$1");
+      ctx.fillText(label, x + bwActual/2, padT + chartH + 4*dpr);
+    });
+  }
+
   async function renderConcluidasAdmModal(yyyymm, sellerFilter, sourceFilter){
     const ym = normYYYYMM(yyyymm) || nowYYYYMM();
     openModal(`CONCLUÍDAS (ADM) • ${ym}`, null);
@@ -2442,6 +2662,29 @@
     a.remove();
   }
 
+  function exportAnaliseCSV(list){
+    const header = ["COMPETENCIA","VENDEDORA","IMPLANTADA_EM","NEGOCIO","OPERADORA","FONTE","VLR_PRODUZIDO"];
+    const lines = [header.join(";")];
+    for (const it of list){
+      lines.push([
+        `"${normYYYYMM(it.competence)||"—"}"`,
+        `"${String(it.sellerName||"").replace(/"/g,'""')}"`,
+        `"${formatImplantada(it.closeDate)}"`,
+        `"${String(it.client||"").replace(/"/g,'""')}"`,
+        `"${String(it.operator||"").replace(/"/g,'""')}"`,
+        `"${String(it.source||"").replace(/"/g,'""')}"`,
+        `"${Number(it.opportunity)||0}"`
+      ].join(";"));
+    }
+    const blob = new Blob([lines.join("\n")], {type:"text/csv;charset=utf-8;"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `analise_${nowYYYYMM()}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
   /* ================= BONIFICAÇÃO ADM ================= */
   async function openBonifRankingADM(){
     const pass = prompt("Senha ADM:");
@@ -2581,6 +2824,207 @@
     document.getElementById("pdfBtn").addEventListener("click", ()=>exportModalToPDF(`busca_${qNorm || "vazio"}`));
   }
 
+  /* ================= ANÁLISE ================= */
+  async function openAnaliseModal(sellerFilter, compFilter, operFilter, srcFilter){
+    openModal("ANÁLISE", null);
+
+    const allSellers = getAllVisibleUsersForCards().slice().sort((a,b)=>a.label.localeCompare(b.label,"pt-BR"));
+
+    let allRecords = [];
+    for (const s of allSellers){
+      const sid = Number(s.userId||0);
+      for (const it of (closedWonBySellerId[sid]||[])){
+        allRecords.push({ ...it, sellerName: s.label, sellerId: sid });
+      }
+    }
+
+    const compSet = new Set(allRecords.map(x=>normYYYYMM(x.competence)).filter(Boolean));
+    const comps = Array.from(compSet).sort().reverse();
+
+    let filtered = allRecords.slice();
+    if (sellerFilter !== "ALL"){
+      const sid = Number(sellerFilter);
+      filtered = filtered.filter(x => Number(x.sellerId) === sid);
+    }
+    if (compFilter !== "ALL"){
+      const ym = normYYYYMM(compFilter);
+      filtered = filtered.filter(x => normYYYYMM(x.competence) === ym);
+    }
+
+    const operSet = new Set(allRecords.map(x => x.operator || "—").filter(Boolean));
+    const srcSet = new Set(allRecords.map(x => x.source || "—").filter(Boolean));
+
+    if (operFilter !== "ALL") filtered = filtered.filter(x => (x.operator || "—") === operFilter);
+    if (srcFilter !== "ALL") filtered = filtered.filter(x => (x.source || "—") === srcFilter);
+
+    const totalProduzido = filtered.reduce((s,x)=> s + (Number(x.opportunity)||0), 0);
+    const totalContratos = filtered.length;
+    const ticketMedio = totalContratos > 0 ? totalProduzido / totalContratos : 0;
+
+    const byMonth = {};
+    for (const x of filtered){
+      const c = normYYYYMM(x.competence) || "—";
+      byMonth[c] = (byMonth[c]||0) + (Number(x.opportunity)||0);
+    }
+    const bestMonthEntry = Object.entries(byMonth).sort((a,b)=>b[1]-a[1])[0];
+
+    const bySellerProd = {};
+    for (const x of filtered) bySellerProd[x.sellerName] = (bySellerProd[x.sellerName]||0) + (Number(x.opportunity)||0);
+    const bestSellerEntry = Object.entries(bySellerProd).sort((a,b)=>b[1]-a[1])[0];
+
+    const byOper = {};
+    for (const x of filtered){ const k = x.operator || "—"; byOper[k] = (byOper[k]||0) + (Number(x.opportunity)||0); }
+    const bySrc = {};
+    for (const x of filtered){ const k = x.source || "—"; bySrc[k] = (bySrc[k]||0) + (Number(x.opportunity)||0); }
+
+    const sellerOpts = [`<option value="ALL" ${sellerFilter==="ALL"?"selected":""}>Todas</option>`]
+      .concat(allSellers.map(s=>{
+        const sid = String(s.userId||0);
+        return `<option value="${sid}" ${sellerFilter===sid?"selected":""}>${escHtml(s.label)}</option>`;
+      })).join("");
+    const compOpts = [`<option value="ALL" ${compFilter==="ALL"?"selected":""}>Todas (acumulado)</option>`]
+      .concat(comps.map(c=>`<option value="${c}" ${compFilter===c?"selected":""}>${c}</option>`)).join("");
+    const operOpts = [`<option value="ALL" ${operFilter==="ALL"?"selected":""}>Todas</option>`]
+      .concat(Array.from(operSet).sort().map(o=>`<option value="${escHtml(o)}" ${operFilter===o?"selected":""}>${escHtml(o)}</option>`)).join("");
+    const srcOpts = [`<option value="ALL" ${srcFilter==="ALL"?"selected":""}>Todas</option>`]
+      .concat(Array.from(srcSet).sort().map(o=>`<option value="${escHtml(o)}" ${srcFilter===o?"selected":""}>${escHtml(o)}</option>`)).join("");
+
+    $modalTop.innerHTML = `
+      <div class="rowFlex">
+        <div class="inlineCtrl">
+          <span class="pillSmall">Vendedora</span>
+          <select class="sel" id="anSeller">${sellerOpts}</select>
+          <span class="pillSmall">Competência</span>
+          <select class="sel" id="anComp">${compOpts}</select>
+          <span class="pillSmall">Operadora</span>
+          <select class="sel" id="anOper">${operOpts}</select>
+          <span class="pillSmall">Fonte</span>
+          <select class="sel" id="anSrc">${srcOpts}</select>
+        </div>
+      </div>
+    `;
+
+    const rankingData = Object.entries(bySellerProd)
+      .map(([name, prod]) => {
+        const sellerObj = allSellers.find(s=>s.label===name);
+        const sid = sellerObj ? Number(sellerObj.userId||0) : 0;
+        const contracts = filtered.filter(x=>x.sellerName===name).length;
+        const ticket = contracts > 0 ? prod/contracts : 0;
+        const ym2 = compFilter !== "ALL" ? normYYYYMM(compFilter) : nowYYYYMM();
+        const meta = getMeta(ym2, sid);
+        const metaPct = meta > 0 ? (prod/meta)*100 : null;
+        return { name, prod, contracts, ticket, meta, metaPct };
+      })
+      .sort((a,b)=>b.prod-a.prod);
+
+    const compsOrdered = Array.from(new Set(filtered.map(x=>normYYYYMM(x.competence)).filter(Boolean))).sort();
+    const prodByMonth = compsOrdered.map(c=>{
+      const v = filtered.filter(x=>normYYYYMM(x.competence)===c).reduce((s,x)=>s+(Number(x.opportunity)||0),0);
+      return { comp:c, value:v };
+    });
+
+    const detailSorted = filtered.slice().sort((a,b)=>
+      String(b.closeDate||"").localeCompare(String(a.closeDate||"")) || a.sellerName.localeCompare(b.sellerName,"pt-BR")
+    );
+    const detailRows = detailSorted.map(it=>`
+      <tr>
+        <td>${escHtml(normYYYYMM(it.competence)||"—")}</td>
+        <td>${escHtml(it.sellerName)}</td>
+        <td>${formatImplantada(it.closeDate)}</td>
+        <td>${escHtml(it.client)}</td>
+        <td>${escHtml(it.operator||"—")}</td>
+        <td>${escHtml(it.source||"—")}</td>
+        <td class="tdRight"><b>${fmtMoney(it.opportunity, it.currency)}</b></td>
+      </tr>
+    `).join("");
+
+    const rankRows = rankingData.map((r,idx)=>`
+      <tr>
+        <td><b>#${idx+1}</b></td>
+        <td>${escHtml(r.name)}</td>
+        <td class="tdRight"><b>${fmtMoney(r.prod,"BRL")}</b></td>
+        <td class="tdRight">${r.contracts}</td>
+        <td class="tdRight">${fmtMoney(r.ticket,"BRL")}</td>
+        <td class="tdRight">${r.metaPct !== null ? r.metaPct.toFixed(1)+"%" : "—"}</td>
+      </tr>
+    `).join("");
+
+    $modalContent.innerHTML = `
+      <div class="kpiGrid">
+        <div class="kpiCard"><b>Total produzido</b><span>${fmtMoney(totalProduzido,"BRL")}</span></div>
+        <div class="kpiCard"><b>Total contratos</b><span>${totalContratos}</span></div>
+        <div class="kpiCard"><b>Ticket médio</b><span>${fmtMoney(ticketMedio,"BRL")}</span></div>
+        <div class="kpiCard"><b>Melhor mês</b><span>${bestMonthEntry ? escHtml(bestMonthEntry[0]) : "—"}</span></div>
+        <div class="kpiCard"><b>Melhor vendedora</b><span style="font-size:14px;">${bestSellerEntry ? escHtml(bestSellerEntry[0]) : "—"}</span></div>
+      </div>
+
+      <div style="margin-bottom:14px;">
+        <div style="font-weight:950;font-size:14px;margin-bottom:6px;">Produção por mês (R$)</div>
+        <canvas id="barChart" width="800" height="220" style="width:100%;height:220px;display:block;"></canvas>
+      </div>
+
+      <div class="pieWrap" style="margin-bottom:14px;">
+        <div class="pieBox">
+          <div style="font-weight:950;font-size:13px;margin-bottom:6px;">Por Operadora</div>
+          <canvas id="pieOper" width="300" height="200"></canvas>
+        </div>
+        <div class="pieBox">
+          <div style="font-weight:950;font-size:13px;margin-bottom:6px;">Por Fonte</div>
+          <canvas id="pieSrc" width="300" height="200"></canvas>
+        </div>
+      </div>
+
+      <div style="font-weight:950;font-size:14px;margin-bottom:6px;">Ranking por vendedora</div>
+      <table class="table" style="margin-bottom:14px;">
+        <thead><tr><th>#</th><th>Vendedora</th><th class="tdRight">Produzido</th><th class="tdRight">Contratos</th><th class="tdRight">Ticket médio</th><th class="tdRight">% Meta</th></tr></thead>
+        <tbody>${rankRows || `<tr><td colspan="6">Sem dados.</td></tr>`}</tbody>
+      </table>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span style="font-weight:950;font-size:14px;">Detalhe dos registros</span>
+        <button class="btn" id="anExportCSV">Exportar CSV</button>
+      </div>
+      <table class="table">
+        <thead><tr><th>Competência</th><th>Vendedora</th><th>Implantada em</th><th>Negócio</th><th>Operadora</th><th>Fonte</th><th class="tdRight">Valor</th></tr></thead>
+        <tbody>${detailRows || `<tr><td colspan="7">Sem dados.</td></tr>`}</tbody>
+      </table>
+    `;
+
+    setTimeout(()=>{
+      const barCanvas = document.getElementById("barChart");
+      if (barCanvas){
+        const dpr = window.devicePixelRatio || 1;
+        const rect = barCanvas.getBoundingClientRect();
+        barCanvas.width = Math.round(rect.width * dpr);
+        barCanvas.height = 220 * dpr;
+        drawBarChart(barCanvas, prodByMonth);
+      }
+      const cvOper = document.getElementById("pieOper");
+      if (cvOper){
+        const operSlices = Object.entries(byOper).sort((a,b)=>b[1]-a[1]).map(([k,v])=>({label:k, value:v})).filter(x=>x.value>0);
+        drawPieLabeled(cvOper, operSlices.length ? operSlices : [{label:"—",value:1}], "Operadoras");
+      }
+      const cvSrc = document.getElementById("pieSrc");
+      if (cvSrc){
+        const srcSlices = Object.entries(bySrc).sort((a,b)=>b[1]-a[1]).map(([k,v])=>({label:k, value:v})).filter(x=>x.value>0);
+        drawPieLabeled(cvSrc, srcSlices.length ? srcSlices : [{label:"—",value:1}], "Fontes");
+      }
+    }, 0);
+
+    const reopen = async ()=>{
+      const sf = document.getElementById("anSeller")?.value || "ALL";
+      const cf = document.getElementById("anComp")?.value || "ALL";
+      const of2 = document.getElementById("anOper")?.value || "ALL";
+      const srf = document.getElementById("anSrc")?.value || "ALL";
+      await openAnaliseModal(sf, cf, of2, srf);
+    };
+    document.getElementById("anSeller").addEventListener("change", reopen);
+    document.getElementById("anComp").addEventListener("change", reopen);
+    document.getElementById("anOper").addEventListener("change", reopen);
+    document.getElementById("anSrc").addEventListener("change", reopen);
+    document.getElementById("anExportCSV").addEventListener("click", ()=>exportAnaliseCSV(detailSorted));
+  }
+
   /* ================= THEME ================= */
   function setTheme(cls){
     document.body.classList.remove("theme-dark","theme-blue","theme-light");
@@ -2715,6 +3159,9 @@
 
   document.getElementById("admDoneAll").addEventListener("click", openConcluidasAdm);
   document.getElementById("admBonifRanking").addEventListener("click", openBonifRankingADM);
+  document.getElementById("admAnalise").addEventListener("click", ()=>{
+    openAnaliseModal("ALL", "ALL", "ALL", "ALL");
+  });
 
   /* ================= LOAD ================= */
   let loading = false;
@@ -2735,7 +3182,7 @@
   let sorteioSparkTimer = null;
 
   function updateSorteioBar(){
-    const ym = nowYYYYMM();
+    const ym = selectedCompetence === "current" ? nowYYYYMM() : (normYYYYMM(selectedCompetence) || nowYYYYMM());
     $sorteioYm.textContent = ym;
 
     const meta = getSorteioMeta(ym) || 0;
@@ -2755,7 +3202,7 @@
     $sorteioPct.textContent = (meta > 0) ? `${pct.toFixed(1)}%` : "—";
 
     if ($sorteioSpark){
-      const shouldAnimate = lastSorteioPct !== null && pct > lastSorteioPct + 0.0001;
+      const shouldAnimate = selectedCompetence === "current" && lastSorteioPct !== null && pct > lastSorteioPct + 0.0001;
       if (shouldAnimate){
         $sorteioSpark.classList.add("active");
         if (sorteioSparkTimer) clearTimeout(sorteioSparkTimer);
@@ -2779,6 +3226,7 @@
       if(!operatorMap) operatorMap = await loadOperatorMap();
       if(!stageMap) stageMap = await loadStages();
       if(!sourceMap) sourceMap = await loadSources();
+      if(!sourceCustomMap) sourceCustomMap = await loadSourceMap();
       await ensureUsersAndResolve();
       renderFooterPhotos();
 
@@ -2878,6 +3326,7 @@
       }
 
       rebuildGlobalSearchIndex();
+      updateCompFilterOptions();
       renderAll();
       updateSorteioBar();
 
