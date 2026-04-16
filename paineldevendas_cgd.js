@@ -1718,7 +1718,7 @@
     const rank = Number(rankMap.get(sid) || 0);
     const rankClass = rank === 1 ? " rank1" : rank === 2 ? " rank2" : rank === 3 ? " rank3" : "";
     const showBell = isCurrentMonth && (bellUntilBySellerId[sid] || 0) > Date.now();
-    const compBadge = !isCurrentMonth ? `<div class="compBadge">${ym}</div>` : "";
+    const compBadge = !isCurrentMonth ? `<div class="compBadge">${escHtml(ym)}</div>` : "";
     const histContratos = isCurrentMonth ? 0 : (closedWonBySellerId[sid]||[]).filter(it=>normYYYYMM(it.competence)===ym).length;
     const card = document.createElement("section");
     card.className = `card${rankClass}`;
