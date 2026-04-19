@@ -3001,11 +3001,23 @@ restoreSyncQueue();
           continue;
         }
         if (job.type === 'leadUpdate' && job.leadId && job.fields) {
+          const newOwnerId = job.fields.ASSIGNED_BY_ID != null ? String(Number(job.fields.ASSIGNED_BY_ID)) : null;
           for (const [uid, arr] of STATE.leadsByUser.entries()) {
             const idx = (arr || []).findIndex((l) => String(l.ID) === String(job.leadId));
             if (idx >= 0) {
-              arr[idx] = { ...(arr[idx] || {}), ...(job.fields || {}) };
-              STATE.leadsByUser.set(uid, arr);
+              const updatedLead = { ...(arr[idx] || {}), ...(job.fields || {}) };
+              if (newOwnerId && newOwnerId !== uid) {
+                arr.splice(idx, 1);
+                STATE.leadsByUser.set(uid, arr);
+                const targetArr = (STATE.leadsByUser.get(newOwnerId) || []).slice();
+                if (!targetArr.some((l) => String(l.ID) === String(job.leadId))) {
+                  targetArr.unshift({ ...updatedLead, _ownerUserId: String(newOwnerId) });
+                  STATE.leadsByUser.set(newOwnerId, targetArr);
+                }
+              } else {
+                arr[idx] = updatedLead;
+                STATE.leadsByUser.set(uid, arr);
+              }
               break;
             }
           }
@@ -5029,6 +5041,7 @@ restoreSyncQueue();
       setTimeout(async () => {
         try {
           await loadLeadsSnapshotAllUsers({ force: true });
+          try { overlayPendingSyncState(); } catch(_) {}
           if (modal.style.display === 'block' && LAST_LEADS_CTX.userId === String(user.userId)) openLeadsModalForUser(user.userId, LAST_LEADS_CTX.kw || '', { useCache: true, noBackgroundReload: true, dateFilter: LAST_LEADS_CTX.dateFilter || '', operFilter: LAST_LEADS_CTX.operFilter || '' });
         } catch (_) {}
       }, 180);
@@ -6555,22 +6568,26 @@ function makeUserCard(u) {
         if (d[DEAL_UF_LEAD_ORIGEM]) fields[DEAL_UF_LEAD_ORIGEM] = d[DEAL_UF_LEAD_ORIGEM];
         else if (resolvedLead) fields[DEAL_UF_LEAD_ORIGEM] = String(leadOrigemId(resolvedLead) || resolvedLead.ID || "");
 
+        const reschLk = `resched:${dealId}`;
+        if (!lockTry(reschLk)) throw new Error('Operação em andamento, aguarde.');
         try {
-          UI_REFRESH_HOLD_UNTIL = Date.now() + 6000;
+          UI_REFRESH_HOLD_UNTIL = Date.now() + 10000;
           await safeDealUpdate(String(dealId), { STAGE_ID: String(STATE.doneStageId) });
-          const created = await bx("crm.deal.add", { fields });
-          const realId = String((created && (created.result || created)) || '').trim();
           updateDealInState(dealId, { STAGE_ID: String(STATE.doneStageId), DATE_MODIFY: new Date().toISOString() });
-          if (realId) upsertDealLocal(parseLocalDealFromFields(realId, fields));
+          const tempId = makeTempId("TMP_RESCHED");
+          upsertDealLocal(parseLocalDealFromFields(tempId, fields));
+          enqueueSync({ type: "dealAdd", tempId, fields });
           rebuildDealsOpen();
           forceCloseAllModals();
           if (currentView.kind === 'user' && currentView.userId) renderUserPanel(currentView.userId);
           else renderCurrentView();
         } catch (netErr) {
-          setTimeout(() => { refreshData(true, { deferLeads:false }).catch(()=>{}); }, 120);
+          setTimeout(() => { refreshData(true, { deferLeads:false }).catch(()=>{}); }, 500);
           throw netErr;
+        } finally {
+          lockRelease(reschLk);
         }
-        setTimeout(() => { refreshData(true, { deferLeads:false }).catch(()=>{}); }, 260);
+        setTimeout(() => { refreshData(true, { deferLeads:false }).catch(()=>{}); }, 2500); // delay to allow Bitrix to propagate the new deal before re-fetching
       } catch (e) {
         warn.style.display = "block";
         warn.textContent = "Falha:\n" + (e.message || e);
@@ -6593,7 +6610,7 @@ function makeUserCard(u) {
     const warn = document.getElementById("dmWarn");
     document.getElementById("dmResched").onclick = () => openDoneAndRescheduleModal(dealId);
     document.getElementById("dmOk").onclick = async () => {
-      try { warn.style.display = "none"; await markDone(dealId); closeModal(); renderCurrentView(); }
+      try { warn.style.display = "none"; UI_REFRESH_HOLD_UNTIL = Date.now() + 6000; await markDone(dealId); closeModal(); renderCurrentView(); }
       catch (e) { warn.style.display = "block"; warn.textContent = "Falha:\n" + (e.message || e); }
     };
   }
