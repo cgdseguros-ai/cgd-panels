@@ -953,7 +953,6 @@
     { label: "USER 3085", userId: 3085 },
     { label: "USER 3387", userId: 3387 },
     { label: "USER 3389", userId: 3389 },
-    { label: "JULIA MELLO",      userId: 4743 },
     { label: "NICOLE RODRIGUES", userId: 4741 },
   ];
 
@@ -1868,8 +1867,12 @@
     if (normalizeText($q.value)) renderSearchPanel();
   });
 
-  $compFilter.addEventListener("change", ()=>{
+  $compFilter.addEventListener("change", async ()=>{
     selectedCompetence = $compFilter.value;
+    if (selectedCompetence !== "current"){
+      const ym = normYYYYMM(selectedCompetence) || nowYYYYMM();
+      try{ await ensureConfigLoaded(ym); }catch(_){}
+    }
     renderAll();
     updateSorteioBar();
   });
@@ -3315,9 +3318,10 @@
       const nowTs = Date.now();
       for (const sid of Object.keys(statsBySellerId)){
         const numSid = Number(sid);
-        const prev = Number(prevMetaPctBySellerId[numSid] || 0);
+        const prevRaw = prevMetaPctBySellerId[numSid];
         const cur = Number(statsBySellerId[numSid]?.metaPct || 0);
-        if (prev >= 0 && cur > prev){
+        // só toca se já houve uma carga anterior (prevRaw !== undefined)
+        if (prevRaw !== undefined && cur > Number(prevRaw || 0)){
           bellUntilBySellerId[numSid] = nowTs + 10000;
           playMetaBell();
           setTimeout(()=>{ try{ renderAll(); }catch(_){ } }, 10200);
