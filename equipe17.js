@@ -85,6 +85,8 @@
     "3079", "3083", "3389", "4741",
     "1", "15", "19", "17", "23", "811", "3081",
   ]);
+  const ADMIN_PANEL_USERS = new Set(["1", "17"]);
+  function isAdminPanelUser(userId) { return ADMIN_PANEL_USERS.has(String(userId)); }
 
   const FOOTER_PARTNERS = [
     { userId: 27, label: "Sócio" },
@@ -1038,7 +1040,7 @@
     return Object.keys(wanted).every((k) => normDateCompareEq(src[k], wanted[k]));
   }
 
-  const LOCAL_DEAL_PATCH_TTL_MS = 30000;
+  const LOCAL_DEAL_PATCH_TTL_MS = 90000;
   function localDealPatchKey(dealId){ return `deal:${String(dealId || "")}`; }
   function registerLocalDealPatch(dealId, fields, ttlMs = LOCAL_DEAL_PATCH_TTL_MS) {
     const id = String(dealId || '').trim();
@@ -1122,6 +1124,9 @@
 
       const verify = async () => {
         try {
+          clearExpiredLocalDealPatches();
+          const activePatch = STATE.localDealPatches instanceof Map ? STATE.localDealPatches.get(localDealPatchKey(id)) : null;
+          if (activePatch) return true;
           const fresh = await bx("crm.deal.get", { id });
           if (dealFieldsMatchRequested(fresh, fieldsToSend)) {
             registerLocalDealPatch(id, fieldsToSend, 60000);
@@ -2935,6 +2940,7 @@ restoreSyncQueue();
     if (!job) return;
     SYNC_QUEUE.push(job);
     persistSyncQueue();
+    try { overlayPendingSyncState(); } catch(_) {}
     const delay = opts && typeof opts.delayMs === 'number' ? opts.delayMs : (job && (job.type === "dealDelete" || job.type === "leadDelete") ? 80 : 450);
     scheduleSyncFlush(delay);
   }
@@ -3017,7 +3023,7 @@ restoreSyncQueue();
 
   async function flushSyncQueue() {
     if (SYNC_QUEUE_RUNNING || !SYNC_QUEUE.length) return;
-    if (!acquireTabLock("SYNC", 60000)) { scheduleSyncFlush(1200); return; }
+    if (!acquireTabLock("SYNC", 30000)) { scheduleSyncFlush(1200); return; }
     SYNC_QUEUE_RUNNING = true;
     try {
       squashSyncQueue();
@@ -6014,8 +6020,8 @@ function makeUserCard(u) {
 
     const hasLeadsBtn = LEAD_USERS.has(String(user.userId));
     const leadsBtn = hasLeadsBtn ? `<button class="eqd-btn" data-action="leadsModal" data-userid="${user.userId}" id="btnLeads">LEADS</button>` : ``;
-    const analysisBtn = String(user.userId) === "1" ? `<button class="eqd-btn" data-action="leadAnalysis">ANÁLISE DE LEADS</button>` : ``;
-    const globalNoFuBtn = String(user.userId) === "1" ? `<button class="eqd-btn" data-action="globalNoFollowup">LEADS SEM FOLLOW-UP</button>` : ``;
+    const analysisBtn = isAdminPanelUser(user.userId) ? `<button class="eqd-btn" data-action="leadAnalysis">ANÁLISE DE LEADS</button>` : ``;
+    const globalNoFuBtn = isAdminPanelUser(user.userId) ? `<button class="eqd-btn" data-action="globalNoFollowup">LEADS SEM FOLLOW-UP</button>` : ``;
 
     const finBtn = String(user.userId) === "813" ? `<a class="eqd-btn" href="${FINANCEIRO_URL}" target="_blank" rel="noopener">FINANCEIRO</a>` : ``;
     const segBtn = SEGUROS_USERS.has(String(user.userId)) ? `<a class="eqd-btn" href="${SEGUROS_URL}" target="_blank" rel="noopener">SEGUROS</a>` : ``;
@@ -6023,13 +6029,13 @@ function makeUserCard(u) {
     const overdueFollow = countUserStats(user.userId).overdueFollow;
     const followListBtn = `<button class="eqd-btn ${overdueFollow ? "blinkGreenFull" : ""}" data-action="followList" data-userid="${user.userId}" id="followListBtn">LISTA DE FOLLOW-UP</button>`;
     const genericFollowupBtn = canCreateLooseFollowup(user.userId) ? `<button class="eqd-btn" data-action="followUpModal" data-userid="${user.userId}">FOLLOW-UP</button>` : ``;
-    const lostFupBtn = String(user.userId) === "1" ? `<button class="eqd-btn" data-action="lostFollowupsLocator" data-userid="${user.userId}">FUPs DE LEADS PERDIDOS</button>` : ``;
+    const lostFupBtn = isAdminPanelUser(user.userId) ? `<button class="eqd-btn" data-action="lostFollowupsLocator" data-userid="${user.userId}">FUPs DE LEADS PERDIDOS</button>` : ``;
     const newTaskBtn = `<button class="eqd-btn eqd-btnPrimary" data-action="newTaskModal" data-userid="${user.userId}">NOVA TAREFA</button>`;
     const recurBtn = `<button class="eqd-btn" data-action="recurManager" data-userid="${user.userId}">RECORRÊNCIA</button>`;
     const proposalsBtn = `<button class="eqd-btn" data-action="proposalsModal" data-userid="${user.userId}">PROPOSTAS</button>`;
-    const proposalsAdminBtn = String(user.userId) === "1" ? `<button class="eqd-btn" data-action="proposalsAdmin">PROPOSTAS • GERAL</button>` : ``;
-    const user1AdminToggleBtn = String(user.userId) === "1" ? `<div id="user1AdminToggle" class="eqd-adminToggle" data-action="toggleAdminResources" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:950;padding:6px 2px;margin-left:auto;order:999"><span id="user1AdminArrow">▸</span><span>RECURSOS ADM</span></div>` : ``;
-    const user1AdminPanel = String(user.userId) === "1" ? `<div id="user1AdminPanel" style="display:none;gap:8px;flex-wrap:wrap;padding-top:4px">${analysisBtn}${globalNoFuBtn}${lostFupBtn}${proposalsAdminBtn}</div>` : ``;
+    const proposalsAdminBtn = isAdminPanelUser(user.userId) ? `<button class="eqd-btn" data-action="proposalsAdmin">PROPOSTAS • GERAL</button>` : ``;
+    const user1AdminToggleBtn = isAdminPanelUser(user.userId) ? `<div id="user1AdminToggle" class="eqd-adminToggle" data-action="toggleAdminResources" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:950;padding:6px 2px;margin-left:auto;order:999"><span id="user1AdminArrow">▸</span><span>RECURSOS ADM</span></div>` : ``;
+    const user1AdminPanel = isAdminPanelUser(user.userId) ? `<div id="user1AdminPanel" style="display:none;gap:8px;flex-wrap:wrap;padding-top:4px">${analysisBtn}${globalNoFuBtn}${lostFupBtn}${proposalsAdminBtn}</div>` : ``;
     const viewMode = getUserDealViewMode(user.userId);
     const viewBtn = ``;
     const vincularFupBtn = ``;
@@ -6053,7 +6059,7 @@ function makeUserCard(u) {
             </div>
           </div>
 
-          <div class="${String(user.userId) === "1" ? 'panelTools panelToolsUser1' : 'panelTools'}">
+          <div class="${isAdminPanelUser(user.userId) ? 'panelTools panelToolsUser1' : 'panelTools'}">
             <button class="eqd-btn" data-action="backToPrevious">VOLTAR</button>
             ${finBtn}
             ${segBtn}
@@ -6149,7 +6155,7 @@ function makeUserCard(u) {
           </div>
         </div>
 
-        <div class="${String(user.userId) === "1" ? 'panelTools panelToolsUser1' : 'panelTools'}">
+        <div class="${isAdminPanelUser(user.userId) ? 'panelTools panelToolsUser1' : 'panelTools'}">
           <button class="eqd-btn" data-action="backToPrevious">VOLTAR</button>
           ${finBtn}
           ${segBtn}
@@ -6378,6 +6384,7 @@ function makeUserCard(u) {
       const fastOpenOnly = false;
       await loadDeals({ forceFull: true, openOnly: false, deferPhotos: true });
       overlayPendingSyncState();
+      if (el.modalOverlay.style.display !== "flex") renderCurrentView(true);
 
       const now = Date.now();
 
@@ -9299,7 +9306,7 @@ document.addEventListener("click", async (e) => {
     renderGeneral();
     setSoftStatus("JS: ok");
     const hasWarmCache = Array.isArray(STATE.dealsAll) && STATE.dealsAll.length > 0;
-    if (hasWarmCache) { try { setBootProgress(18, "Abrindo com cache local..."); renderCurrentView(); } catch (_) {} }
+    if (hasWarmCache) { try { setBootProgress(18, "Abrindo com cache local..."); renderCurrentView(true); } catch (_) {} }
     Promise.resolve().then(async () => {
       try {
         setBootProgress(22, "Buscando dados no Bitrix...");
