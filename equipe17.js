@@ -56,7 +56,7 @@
     { name: "Manuela", userId: 813, team: "DELTA" },
     { name: "Maria Clara", userId: 841, team: "DELTA" },
     { name: "Beatriz", userId: 3387, team: "DELTA" },
-    { name: "Nicole Rodrigues", userId: 4741, team: "DELTA" },
+    { name: "GILDA WERNECK", userId: 4945, team: "DELTA" },
     { name: "Diogo", userId: 1, team: "DELTA" },
 
     { name: "Aline", userId: 15, team: "ALFA" },
@@ -68,7 +68,7 @@
     { name: "Fernanda Silva", userId: 3083, team: "ALFA" },
 
     { name: "Livia Alves", userId: 3079, team: "BETA" },
-    { name: "FUTURA PROFISSIONAL", userId: 4743, team: "BETA" },
+    { name: "Nicole Rodrigues", userId: 4741, team: "BETA" },
     { name: "Anna Clara", userId: 3389, team: "BETA" },
 
     { name: "Gabriel", userId: 815, team: "ÔMEGA" },
@@ -5040,7 +5040,7 @@ restoreSyncQueue();
     } else if (!(opts && opts.noBackgroundReload)) {
       setTimeout(async () => {
         try {
-          await loadLeadsSnapshotAllUsers({ force: true });
+          await loadLeadsForOneUser(user.userId);
           try { overlayPendingSyncState(); } catch(_) {}
           if (modal.style.display === 'block' && LAST_LEADS_CTX.userId === String(user.userId)) openLeadsModalForUser(user.userId, LAST_LEADS_CTX.kw || '', { useCache: true, noBackgroundReload: true, dateFilter: LAST_LEADS_CTX.dateFilter || '', operFilter: LAST_LEADS_CTX.operFilter || '' });
         } catch (_) {}
@@ -6397,7 +6397,7 @@ function makeUserCard(u) {
       const fastOpenOnly = false;
       await loadDeals({ forceFull: true, openOnly: false, deferPhotos: true });
       overlayPendingSyncState();
-      if (el.modalOverlay.style.display !== "flex") renderCurrentView(true);
+      if (el.modalOverlay.style.display !== "flex") renderCurrentView();
 
       const now = Date.now();
 
@@ -6581,6 +6581,7 @@ function makeUserCard(u) {
           forceCloseAllModals();
           if (currentView.kind === 'user' && currentView.userId) renderUserPanel(currentView.userId);
           else renderCurrentView();
+          UI_REFRESH_HOLD_UNTIL = Date.now() + 5000;
         } catch (netErr) {
           setTimeout(() => { refreshData(true, { deferLeads:false }).catch(()=>{}); }, 500);
           throw netErr;
@@ -8288,6 +8289,7 @@ function makeUserCard(u) {
         const miss = proposalMissingFieldDefs(nextStage, { STAGE_ID: nextStage, __stageName: stageLabel }, deal);
         if (miss.fields.length) return openProposalRequiredFieldsModal(deal, nextStage, returnCtx, { __stageName: stageLabel });
         PROPOSALS_REFRESH_HOLD_UNTIL = Date.now() + 10000;
+        UI_REFRESH_HOLD_UNTIL = Date.now() + 4000;
         patchProposalDealCaches(String(deal.ID), { STAGE_ID: nextStage, _proposalStageName: proposalStageLabelById(nextStage) });
         MODAL_STACK = [];
         closeModal();
@@ -9328,7 +9330,6 @@ document.addEventListener("click", async (e) => {
       try {
         setBootProgress(22, "Buscando dados no Bitrix...");
         await refreshData(false, { forceRecur: false, forceFullDeals: false, deferLeads: true, deferRecur: true });
-        renderCurrentView();
       } catch (_) {}
     });
   })();
