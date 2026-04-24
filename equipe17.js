@@ -6581,7 +6581,7 @@ function makeUserCard(u) {
           forceCloseAllModals();
           if (currentView.kind === 'user' && currentView.userId) renderUserPanel(currentView.userId);
           else renderCurrentView();
-          UI_REFRESH_HOLD_UNTIL = Date.now() + 5000;
+          UI_REFRESH_HOLD_UNTIL = Date.now() + 5000; // cover the 2.5 s deferred refreshData + propagation window
         } catch (netErr) {
           setTimeout(() => { refreshData(true, { deferLeads:false }).catch(()=>{}); }, 500);
           throw netErr;
