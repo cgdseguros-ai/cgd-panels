@@ -56,7 +56,7 @@
     { name: "Manuela", userId: 813, team: "DELTA" },
     { name: "Maria Clara", userId: 841, team: "DELTA" },
     { name: "Beatriz", userId: 3387, team: "DELTA" },
-    { name: "Nicole Rodrigues", userId: 4741, team: "DELTA" },
+    { name: "GILDA WERNECK", userId: 4945, team: "DELTA" },
     { name: "Diogo", userId: 1, team: "DELTA" },
 
     { name: "Aline", userId: 15, team: "ALFA" },
@@ -68,7 +68,7 @@
     { name: "Fernanda Silva", userId: 3083, team: "ALFA" },
 
     { name: "Livia Alves", userId: 3079, team: "BETA" },
-    { name: "FUTURA PROFISSIONAL", userId: 4743, team: "BETA" },
+    { name: "Nicole Rodrigues", userId: 4741, team: "BETA" },
     { name: "Anna Clara", userId: 3389, team: "BETA" },
 
     { name: "Gabriel", userId: 815, team: "ÔMEGA" },
@@ -82,7 +82,7 @@
   const OMEGA_FOLLOWUP_USERS = new Set(["269", "3101", "29"]);
 
   const SPECIAL_PANEL_USERS = new Set([
-    "3079", "3083", "3389", "4741",
+    "3079", "3083", "3389", "4741", "4945",
     "1", "15", "19", "17", "23", "811", "3081",
   ]);
   const ADMIN_PANEL_USERS = new Set(["1", "17"]);
@@ -593,7 +593,7 @@
     finally { clearTimeout(t); }
   }
 
-  const BX_MAX_CONCURRENCY = 3;
+  const BX_MAX_CONCURRENCY = 6;
   let BX_INFLIGHT = 0;
   let BX_COOLDOWN_UNTIL = 0;
   const BX_WAITERS = [];
@@ -6490,6 +6490,24 @@ function makeUserCard(u) {
     await safeDealUpdate(String(dealId), { STAGE_ID: String(STATE.doneStageId) });
   }
 
+  async function concludeDealWithVerify(dealId, stageId, maxRetries = 3) {
+    const id = String(dealId || "");
+    const sid = String(stageId || "");
+    for (let i = 0; i < maxRetries; i++) {
+      await bx("crm.deal.update", { id, fields: { STAGE_ID: sid } });
+      registerLocalDealPatch(id, { STAGE_ID: sid });
+      await sleep(600 * (i + 1));
+      try {
+        const check = await bx("crm.deal.get", { id });
+        if (check && String(check.STAGE_ID) === sid) {
+          registerLocalDealPatch(id, { STAGE_ID: sid }, 120000);
+          return true;
+        }
+      } catch (_) {}
+    }
+    throw new Error(`Falha ao concluir deal ${id} após ${maxRetries} tentativas`);
+  }
+
   async function openDoneAndRescheduleModal(dealId) {
     const d = getDealById(dealId);
     if (!d) return;
@@ -6571,8 +6589,8 @@ function makeUserCard(u) {
         const reschLk = `resched:${dealId}`;
         if (!lockTry(reschLk)) throw new Error('Operação em andamento, aguarde.');
         try {
-          UI_REFRESH_HOLD_UNTIL = Date.now() + 10000;
-          await safeDealUpdate(String(dealId), { STAGE_ID: String(STATE.doneStageId) });
+          UI_REFRESH_HOLD_UNTIL = Date.now() + 15000;
+          await concludeDealWithVerify(dealId, STATE.doneStageId);
           updateDealInState(dealId, { STAGE_ID: String(STATE.doneStageId), DATE_MODIFY: new Date().toISOString() });
           const tempId = makeTempId("TMP_RESCHED");
           upsertDealLocal(parseLocalDealFromFields(tempId, fields));
@@ -6587,7 +6605,7 @@ function makeUserCard(u) {
         } finally {
           lockRelease(reschLk);
         }
-        setTimeout(() => { refreshData(true, { deferLeads:false }).catch(()=>{}); }, 2500); // delay to allow Bitrix to propagate the new deal before re-fetching
+        setTimeout(() => { refreshData(true, { deferLeads:false }).catch(()=>{}); }, 3500); // delay to allow Bitrix to propagate the new deal before re-fetching
       } catch (e) {
         warn.style.display = "block";
         warn.textContent = "Falha:\n" + (e.message || e);

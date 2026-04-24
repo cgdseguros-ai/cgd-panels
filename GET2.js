@@ -55,6 +55,7 @@
     { name: "Maria Clara", userId: 841, team: "DELTA" },
     { name: "Beatriz", userId: 3387, team: "DELTA" },
     { name: "GEANA", userId: 4367, team: "DELTA" },
+    { name: "GILDA WERNECK", userId: 4945, team: "DELTA" },
     { name: "Diogo", userId: 1, team: "DELTA" },
 
     { name: "Aline", userId: 15, team: "ALFA" },
@@ -67,6 +68,7 @@
     { name: "Livia Alves", userId: 3079, team: "BETA" },
     { name: "Fernanda Silva", userId: 3083, team: "BETA" },
     { name: "Nicolle Belmonte", userId: 3085, team: "BETA" },
+    { name: "Nicole Rodrigues", userId: 4741, team: "BETA" },
     { name: "Anna Clara", userId: 3389, team: "BETA" },
 
     { name: "Gabriel", userId: 815, team: "ÔMEGA" },
@@ -623,7 +625,7 @@
     finally { clearTimeout(t); }
   }
 
-  const BX_MAX_CONCURRENCY = 3;
+  const BX_MAX_CONCURRENCY = 6;
   let BX_INFLIGHT = 0;
   let BX_COOLDOWN_UNTIL = 0;
   const BX_WAITERS = [];
@@ -6385,6 +6387,7 @@ function makeUserCard(u) {
       const fastOpenOnly = false;
       await loadDeals({ forceFull: shouldForceFullDealsRefresh(!!forceNetwork), openOnly: false, deferPhotos: true });
       overlayPendingSyncState();
+      if (el.modalOverlay.style.display !== "flex") renderCurrentView();
 
       const now = Date.now();
 
