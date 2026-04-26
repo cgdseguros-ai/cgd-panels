@@ -558,6 +558,25 @@
       .eqd-footer{display:none !important;visibility:hidden !important;opacity:0 !important;pointer-events:none !important;height:0 !important;min-height:0 !important;padding:0 !important;border:0 !important;overflow:hidden !important;}
       #eqd-app{padding-bottom:12px !important;}
     }
+    #eqd-app[data-boot-phase="BOOTING"] .userCard,
+    #eqd-app[data-boot-phase="METRICS_LOADING"] .userCard {
+      pointer-events: none;
+      opacity: 0.55;
+    }
+    #eqd-app[data-boot-phase="METRICS_READY"] .userCard,
+    #eqd-app[data-boot-phase="FINALIZING"] .userCard {
+      pointer-events: none;
+      opacity: 0.85;
+    }
+    .eqd-photo-loading {
+      background: linear-gradient(90deg,#e8e8e8 25%,#f0f0f0 50%,#e8e8e8 75%);
+      background-size: 200% 100%;
+      animation: eqdPhotoShimmer 1.2s infinite;
+    }
+    @keyframes eqdPhotoShimmer {
+      0%   { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
   `);
 
   // =========================
@@ -828,6 +847,136 @@
   function lockKey(k){ return String(k||""); }
   function lockTry(k){ k=lockKey(k); if(!k) return false; if(ACTION_LOCKS.has(k)) return false; ACTION_LOCKS.add(k); return true; }
   function lockRelease(k){ k=lockKey(k); if(!k) return; ACTION_LOCKS.delete(k); }
+
+  // ─── PENDING MUTATIONS REGISTRY ───────────────────────────────────────────
+  const PENDING_MUTATIONS = new Map();
+
+  function pendingMutKey(entityType, id, opId) {
+    return `${String(entityType)}:${String(id)}:${String(opId)}`;
+  }
+
+  function pendingMutRegister(entityType, id, opId, fields, ttlMs = 30000) {
+    const key = pendingMutKey(entityType, id, opId);
+    PENDING_MUTATIONS.set(key, {
+      entityType: String(entityType),
+      id:         String(id),
+      opId:       String(opId),
+      fields:     { ...fields },
+      createdAt:  Date.now(),
+      expiresAt:  Date.now() + ttlMs,
+      status:     "pending",
+    });
+    setTimeout(() => {
+      const m = PENDING_MUTATIONS.get(key);
+      if (m && m.status === "pending") {
+        m.status = "failed";
+        console.warn("[EQD][PendingMut] Expirou sem confirmação:", key);
+      }
+      PENDING_MUTATIONS.delete(key);
+    }, ttlMs + 500);
+  }
+
+  function pendingMutResolve(entityType, id, opId) {
+    const key = pendingMutKey(entityType, id, opId);
+    const m = PENDING_MUTATIONS.get(key);
+    if (m) { m.status = "confirmed"; PENDING_MUTATIONS.delete(key); }
+  }
+
+  function pendingMutFail(entityType, id, opId) {
+    const key = pendingMutKey(entityType, id, opId);
+    const m = PENDING_MUTATIONS.get(key);
+    if (m) { m.status = "failed"; PENDING_MUTATIONS.delete(key); }
+  }
+
+  function pendingMutHas(entityType, id, fieldName) {
+    const prefix = `${String(entityType)}:${String(id)}:`;
+    const now = Date.now();
+    for (const [k, m] of PENDING_MUTATIONS) {
+      if (!k.startsWith(prefix)) continue;
+      if (m.expiresAt < now) continue;
+      if (m.status !== "pending") continue;
+      if (!fieldName) return true;
+      if (fieldName in m.fields) return true;
+    }
+    return false;
+  }
+
+  function pendingMutGetField(entityType, id, fieldName) {
+    const prefix = `${String(entityType)}:${String(id)}:`;
+    const now = Date.now();
+    for (const [k, m] of PENDING_MUTATIONS) {
+      if (!k.startsWith(prefix)) continue;
+      if (m.expiresAt < now) continue;
+      if (m.status !== "pending") continue;
+      if (fieldName in m.fields) return m.fields[fieldName];
+    }
+    return undefined;
+  }
+
+  function applyPendingMutOverlay(entityType, entity) {
+    if (!entity) return entity;
+    const id = String(entity.ID || "");
+    if (!id) return entity;
+    const prefix = `${String(entityType)}:${id}:`;
+    const now = Date.now();
+    let patched = entity;
+    for (const [k, m] of PENDING_MUTATIONS) {
+      if (!k.startsWith(prefix)) continue;
+      if (m.expiresAt < now) continue;
+      if (m.status !== "pending") continue;
+      if (!patched._pendingOverlayed) patched = { ...entity, _pendingOverlayed: true };
+      Object.assign(patched, m.fields);
+    }
+    return patched;
+  }
+  // ─── FIM PENDING MUTATIONS REGISTRY ──────────────────────────────────────
+
+  // ─── BOOT STATE MACHINE ───────────────────────────────────────────────────
+  const BOOT_PHASES = Object.freeze({
+    BOOTING:         "BOOTING",
+    METRICS_LOADING: "METRICS_LOADING",
+    METRICS_READY:   "METRICS_READY",
+    FINALIZING:      "FINALIZING",
+    READY:           "READY",
+  });
+
+  const BOOT_STATE = {
+    phase:             "BOOTING",
+    coreReady:         false,
+    metricsReady:      false,
+    criticalSyncReady: false,
+    photosResolved:    false,
+  };
+
+  function setBootPhase(phase) {
+    BOOT_STATE.phase = phase;
+    try {
+      const el = document.getElementById("eqd-boot-phase");
+      if (el) el.textContent = phase;
+    } catch (_) {}
+    try {
+      const appEl = document.getElementById("eqd-app");
+      if (appEl) appEl.setAttribute("data-boot-phase", phase);
+    } catch (_) {}
+  }
+
+  function canReleasePanel() {
+    return (
+      BOOT_STATE.coreReady         === true &&
+      BOOT_STATE.metricsReady      === true &&
+      BOOT_STATE.criticalSyncReady === true &&
+      BOOT_STATE.photosResolved    === true
+    );
+  }
+
+  function assertPanelReady(silentOnBoot) {
+    if (canReleasePanel()) return true;
+    if (!silentOnBoot) {
+      console.warn("[EQD] Ação bloqueada: painel ainda não está READY (fase:", BOOT_STATE.phase, ")");
+    }
+    return false;
+  }
+  // ─── FIM BOOT STATE MACHINE ──────────────────────────────────────────────
 
   // ✅ contexto LEADS (pra voltar)
   const LAST_LEADS_CTX = { userId: "", kw: "", dateFilter: "", operFilter: "" };
@@ -1177,6 +1326,27 @@
     return photoUrl || "";
   }
 
+  // ─── FOTO COM TIMEOUT E FALLBACK ─────────────────────────────────────────
+  const PHOTO_LOAD_TIMEOUT_MS = 8000;
+
+  async function loadUserPhotosWithFallback() {
+    const tasks = (USERS || []).map(async (u) => {
+      const timer = new Promise((_, rej) =>
+        setTimeout(() => rej(new Error("photo_timeout")), PHOTO_LOAD_TIMEOUT_MS)
+      );
+      try {
+        await Promise.race([
+          ensureUserPhoto(u.userId, u.name),
+          timer,
+        ]);
+      } catch (_) {
+        console.warn("[EQD] Foto não carregada para user", u.userId, "— usando fallback");
+      }
+    });
+    await Promise.allSettled(tasks);
+  }
+  // ─── FIM FOTO COM TIMEOUT ─────────────────────────────────────────────────
+
   // =========================
   // 7) DEALS PARSE
   // =========================
@@ -1357,13 +1527,25 @@
     });
   }
 
-  async function loadLeadsForOneUser(userId) {
+  async function loadLeadsForOneUser(userId, opts = {}) {
     await loadLeadStages();
+
+    const { forceReload = false, priorityStatuses = [] } = opts;
 
     const cacheKey = String(userId);
     const cached = Array.isArray(STATE.leadsByUser.get(cacheKey)) ? STATE.leadsByUser.get(cacheKey) : [];
+
+    // Retornar cache válido se recente e forceReload não solicitado
+    if (!forceReload && cached.length) {
+      if (!(STATE.leadsByUserAt instanceof Map)) STATE.leadsByUserAt = new Map();
+      const cachedAt = Number(STATE.leadsByUserAt.get(cacheKey) || 0);
+      if (cachedAt && (Date.now() - cachedAt) < 25000) return cached;
+    }
+
     if (STATE.loadingLeadsByUser.has(cacheKey)) return cached;
     STATE.loadingLeadsByUser.add(cacheKey);
+
+    if (!(STATE.leadsByUserAt instanceof Map)) STATE.leadsByUserAt = new Map();
 
     try {
       const select = [
@@ -1371,9 +1553,22 @@
         LEAD_UF_OPERADORA, LEAD_UF_IDADE, LEAD_UF_TELEFONE, LEAD_UF_BAIRRO, LEAD_UF_FONTE, LEAD_UF_DATAHORA, LEAD_UF_OBS, LEAD_UF_ATENDIDO_DIA, LEAD_UF_LEAD_ORIGEM, LEAD_UF_HELENA, LEAD_UF_PESSOAL, LEAD_UF_POSSUI_PLANO,
       ].filter(Boolean);
 
-      const statusIds = [leadStageId("NOVO LEAD"), leadStageId("EM ATENDIMENTO"), leadStageId("ATENDIDO"), leadStageId("QUALIFICADO"), ...lostLeadStageIds(), ...convertedLeadStageIds()].filter(Boolean);
       let leads = [];
       let okCalls = 0;
+
+      // Carregar stages prioritários primeiro se fornecidos
+      if (priorityStatuses.length > 0) {
+        try {
+          const priLeads = await bxAll("crm.lead.list", {
+            filter: { ASSIGNED_BY_ID: Number(userId), STATUS_ID: priorityStatuses },
+            select: ["*", "UF_*"],
+            order: { DATE_MODIFY: "DESC" },
+          });
+          if (priLeads && priLeads.length) { leads = leads.concat(priLeads); okCalls++; }
+        } catch (_) {}
+      }
+
+      const statusIds = [leadStageId("NOVO LEAD"), leadStageId("EM ATENDIMENTO"), leadStageId("ATENDIDO"), leadStageId("QUALIFICADO"), ...lostLeadStageIds(), ...convertedLeadStageIds()].filter(Boolean);
       if (statusIds.length) {
         const results = await Promise.all(statusIds.map(async (sid) => {
           try {
@@ -1393,12 +1588,12 @@
         });
       } else {
         try {
-          leads = await bxAll("crm.lead.list", {
+          const rest = await bxAll("crm.lead.list", {
             filter: { ASSIGNED_BY_ID: Number(userId) },
             select,
             order: { ID: "DESC" },
           });
-          okCalls++;
+          if (rest && rest.length) { leads = leads.concat(rest); okCalls++; }
         } catch (_) {}
       }
 
@@ -1416,6 +1611,7 @@
       });
 
       STATE.leadsByUser.set(cacheKey, leads || []);
+      STATE.leadsByUserAt.set(cacheKey, Date.now());
 
       const sNovo = leadStageId("NOVO LEAD");
       const sAt = leadStageId("EM ATENDIMENTO");
@@ -2703,6 +2899,7 @@ ${curObs}` : transferAlert;
   // 16) Cards
   // =========================
   function makeDealCard(deal, context) {
+    deal = applyPendingMutOverlay("deal", deal);
     const showWarn = isAtencaoText(deal._urgTxt);
     const title = (showWarn ? "⚠️ " : "") + bestTitleFromText(deal.TITLE || "");
     const prazoTxt = deal._prazo ? fmt(deal._prazo) : "Sem prazo";
@@ -2827,6 +3024,8 @@ ${curObs}` : transferAlert;
     }
     const apply = (d) => { if (d) Object.assign(d, fields); };
     apply(a); apply(b);
+    // Registra pending mutation para proteger contra refresh remoto sobrescrevendo
+    pendingMutRegister("deal", dealId, "localPatch_" + Date.now(), patchFields, 20000);
   }
 
   const SYNC_QUEUE = [];
@@ -5030,6 +5229,26 @@ restoreSyncQueue();
     await loadLeadStages();
     setLeadsCtx(user.userId, String(kwRaw || ""), { dateFilter: (opts && opts.dateFilter) || "", operFilter: (opts && opts.operFilter) || "" });
 
+    // Reload direto por user quando não usando cache explicitamente
+    const _shouldForceLeadReload = !(opts && opts.useCache);
+    if (_shouldForceLeadReload && !(opts && opts.noBackgroundReload)) {
+      const _priStatuses = [
+        leadStageId("NOVO LEAD"),
+        leadStageId("EM ATENDIMENTO"),
+      ].filter(Boolean);
+      // Carrega em background; modal já abre com cache disponível
+      loadLeadsForOneUser(userId, {
+        forceReload:      true,
+        priorityStatuses: _priStatuses,
+      }).then(() => {
+        try {
+          if (LAST_LEADS_CTX && LAST_LEADS_CTX.userId === String(userId)) {
+            reopenLeadsModalSafe({ noBackgroundReload: true });
+          }
+        } catch (_) {}
+      }).catch(() => {});
+    }
+
     const useCache = !!(opts && opts.useCache);
     const shouldLoadLeads = !!(opts && opts.forceReload) || !useCache || !STATE.leadsByUser.has(String(user.userId));
     let leadsUser = STATE.leadsByUser.get(String(user.userId)) || [];
@@ -6385,6 +6604,14 @@ function makeUserCard(u) {
   let DEALS_FAIL_STREAK = 0;
 
   async function refreshData(forceNetwork, opts = {}) {
+    // Guard: não fazer refresh durante boot se core ainda não está pronto
+    if (!BOOT_STATE.coreReady && !(opts && opts.forceEvenDuringBoot)) return;
+    // Guard: respeitar hold pós-mutação
+    if (Date.now() < UI_REFRESH_HOLD_UNTIL && !(opts && opts.ignoreHold)) return;
+    // Determina se forceFull é realmente necessário
+    const _shouldForceFull = (opts && opts.forceFullDeals === true)
+      || (forceNetwork === true && !(opts && opts.forceFullDeals === false)
+          && !(STATE.dealsAll && STATE.dealsAll.length > 0));
     setBootProgress(8, "Preparando dados...");
     if (!STATE.doneStageId) {
       setBootProgress(12, "Carregando etapas...");
@@ -6395,7 +6622,7 @@ function makeUserCard(u) {
     try {
       setBootProgress(38, "Carregando tarefas e eventos...");
       const fastOpenOnly = false;
-      await loadDeals({ forceFull: true, openOnly: false, deferPhotos: true });
+      await loadDeals({ forceFull: _shouldForceFull, openOnly: false, deferPhotos: true });
       overlayPendingSyncState();
       if (el.modalOverlay.style.display !== "flex") renderCurrentView();
 
@@ -6569,26 +6796,36 @@ function makeUserCard(u) {
         else if (resolvedLead) fields[DEAL_UF_LEAD_ORIGEM] = String(leadOrigemId(resolvedLead) || resolvedLead.ID || "");
 
         const reschLk = `resched:${dealId}`;
-        if (!lockTry(reschLk)) throw new Error('Operação em andamento, aguarde.');
+        if (!lockTry(reschLk)) return;
         try {
-          UI_REFRESH_HOLD_UNTIL = Date.now() + 10000;
-          await safeDealUpdate(String(dealId), { STAGE_ID: String(STATE.doneStageId) });
-          updateDealInState(dealId, { STAGE_ID: String(STATE.doneStageId), DATE_MODIFY: new Date().toISOString() });
+          // Registrar pending mutation antes dos awaits remotos
+          pendingMutRegister("deal", dealId, "reschedDone", { STAGE_ID: STATE.doneStageId }, 60000);
+          updateDealInState(dealId, { STAGE_ID: String(STATE.doneStageId), _hiddenByResched: true, DATE_MODIFY: new Date().toISOString() });
           const tempId = makeTempId("TMP_RESCHED");
           upsertDealLocal(parseLocalDealFromFields(tempId, fields));
           enqueueSync({ type: "dealAdd", tempId, fields });
           rebuildDealsOpen();
+          UI_REFRESH_HOLD_UNTIL = Date.now() + 12000;
           forceCloseAllModals();
-          if (currentView.kind === 'user' && currentView.userId) renderUserPanel(currentView.userId);
-          else renderCurrentView();
-          UI_REFRESH_HOLD_UNTIL = Date.now() + 5000; // cover the 2.5 s deferred refreshData + propagation window
-        } catch (netErr) {
-          setTimeout(() => { refreshData(true, { deferLeads:false }).catch(()=>{}); }, 500);
-          throw netErr;
+          renderCurrentView();
+          // Executar remoto após atualização visual
+          try {
+            await safeDealUpdate(String(dealId), { STAGE_ID: String(STATE.doneStageId) });
+            pendingMutResolve("deal", dealId, "reschedDone");
+            renderCurrentView();
+          } catch (netErr) {
+            pendingMutFail("deal", dealId, "reschedDone");
+            removeDealLocal(tempId);
+            updateDealInState(dealId, { STAGE_ID: String(d.STAGE_ID || ""), _hiddenByResched: false });
+            rebuildDealsOpen();
+            UI_REFRESH_HOLD_UNTIL = 0;
+            renderCurrentView();
+            showRuntimeWarn(netErr);
+            throw netErr;
+          }
         } finally {
           lockRelease(reschLk);
         }
-        setTimeout(() => { refreshData(true, { deferLeads:false }).catch(()=>{}); }, 2500); // delay to allow Bitrix to propagate the new deal before re-fetching
       } catch (e) {
         warn.style.display = "block";
         warn.textContent = "Falha:\n" + (e.message || e);
@@ -8633,29 +8870,86 @@ ${marker}` : marker;
       const viewSel = document.getElementById('proposalViewMode');
       if (viewSel) viewSel.onchange = () => openProposalsModal(uid, { ...LAST_PROPOSALS_CTX, viewMode: String(viewSel.value || 'list'), noStack: true });
       document.querySelectorAll('.proposal-inline-stage').forEach((sel) => {
+        sel.addEventListener("focus", () => {
+          const dId2 = String(sel.getAttribute("data-id") || "");
+          const d2 = findProposalDealById(dId2);
+          if (d2 && !d2._origStageId) d2._origStageId = d2.STAGE_ID;
+        });
+
         sel.onchange = async () => {
-          const dealId = String(sel.getAttribute('data-id') || '');
-          const nextStage = String(sel.value || '').trim();
-          if (!dealId || !nextStage) return;
-          const prev = findProposalDealById(dealId);
+          const newStageId = String(sel.value || "");
+          const dId = String(sel.getAttribute("data-id") || "");
+          if (!newStageId || !dId) return;
+
+          const prev = findProposalDealById(dId);
           const stageLabel = sel.selectedOptions && sel.selectedOptions[0] ? String(sel.selectedOptions[0].textContent || '').trim() : '';
-          const miss = proposalMissingFieldDefs(nextStage, { STAGE_ID: nextStage, __stageName: stageLabel }, prev);
+          const miss = proposalMissingFieldDefs(newStageId, { STAGE_ID: newStageId, __stageName: stageLabel }, prev);
           if (miss.fields.length) {
             sel.value = String(prev && prev.STAGE_ID || '');
-            await openProposalRequiredFieldsModal(prev, nextStage, { ...LAST_PROPOSALS_CTX, userId: uid }, { __stageName: stageLabel });
+            await openProposalRequiredFieldsModal(prev, newStageId, { ...LAST_PROPOSALS_CTX, userId: uid }, { __stageName: stageLabel });
             return;
           }
+
+          const lk = `proposalStage:${dId}`;
+          if (!lockTry(lk)) return;
+
+          const patch = { STAGE_ID: newStageId };
+          // 1. Atualizar caches locais IMEDIATAMENTE (antes de qualquer await)
+          patchProposalDealCaches(dId, { STAGE_ID: newStageId, _proposalStageName: proposalStageLabelById(newStageId) });
+          updateDealInState(dId, patch);
+
+          // 2. Registrar pending mutation
+          const opId = `stageMove_${Date.now()}`;
+          pendingMutRegister("deal", dId, opId, patch, 25000);
+
           PROPOSALS_REFRESH_HOLD_UNTIL = Date.now() + 10000;
           UI_REFRESH_HOLD_UNTIL = Date.now() + 4000;
-          patchProposalDealCaches(dealId, { STAGE_ID: nextStage, _proposalStageName: proposalStageLabelById(nextStage) });
-          openProposalsModal(uid, { ...LAST_PROPOSALS_CTX, noStack: true });
+
+          // 3. Atualizar badge visual inline sem reabrir modal
           try {
-            await safeDealUpdate(dealId, { STAGE_ID: nextStage });
-          } catch (e) {
-            if (prev) patchProposalDealCaches(dealId, { STAGE_ID: prev.STAGE_ID, _proposalStageName: proposalStageLabelForDeal(prev) });
+            const badge = document.querySelector(`[data-proposal-stage-badge="${dId}"]`);
+            if (badge) {
+              badge.textContent = proposalStageLabelById(newStageId);
+            }
+          } catch (_) {}
+
+          try {
+            // 4. Executar remotamente
+            await safeDealUpdate(dId, { STAGE_ID: newStageId });
+
+            // 5. Confirmar seletivamente (max 4 tentativas, sem recarregar tudo)
+            let confirmed = false;
+            for (let attempt = 0; attempt < 4; attempt++) {
+              await sleep(600 + attempt * 400);
+              try {
+                const remote = await bx("crm.deal.get", { id: dId });
+                if (remote && String(remote.STAGE_ID) === newStageId) {
+                  patchProposalDealCaches(dId, { STAGE_ID: newStageId });
+                  updateDealInState(dId, { STAGE_ID: newStageId });
+                  pendingMutResolve("deal", dId, opId);
+                  confirmed = true;
+                  break;
+                }
+              } catch (_) {}
+            }
+            if (!confirmed) {
+              console.warn("[EQD] Proposta STAGE não confirmado em 4 tentativas:", dId);
+            }
+          } catch (remoteErr) {
+            // Rollback
+            pendingMutFail("deal", dId, opId);
+            const origDeal = findProposalDealById(dId);
+            const origStage = (origDeal && origDeal._origStageId) || (origDeal && origDeal.STAGE_ID);
+            if (origStage) {
+              patchProposalDealCaches(dId, { STAGE_ID: origStage, _proposalStageName: proposalStageLabelById(origStage) });
+              updateDealInState(dId, { STAGE_ID: origStage });
+            }
             openProposalsModal(uid, { ...LAST_PROPOSALS_CTX, noStack: true });
             const warn = document.getElementById('proposalWarn');
-            if (warn) { warn.style.display = 'block'; warn.textContent = 'Falha ao mover stage: ' + (e.message || e); }
+            if (warn) { warn.style.display = 'block'; warn.textContent = 'Falha ao mover stage: ' + (remoteErr.message || remoteErr); }
+            showRuntimeWarn(remoteErr);
+          } finally {
+            lockRelease(lk);
           }
         };
       });
@@ -9319,40 +9613,59 @@ document.addEventListener("click", async (e) => {
   // 26) INIT + AUTO REFRESH
   // =========================
   (async function init(){
-    try { loadCache(); } catch(_) {}
-    setBootProgress(3, "Preparando interface...");
-    renderFooterPeople();
-    renderGeneral();
-    setSoftStatus("JS: ok");
-    const hasWarmCache = Array.isArray(STATE.dealsAll) && STATE.dealsAll.length > 0;
-    if (hasWarmCache) { try { setBootProgress(18, "Abrindo com cache local..."); renderCurrentView(true); } catch (_) {} }
-    Promise.resolve().then(async () => {
-      try {
-        setBootProgress(22, "Buscando dados no Bitrix...");
-        await refreshData(false, { forceRecur: false, forceFullDeals: false, deferLeads: true, deferRecur: true });
-      } catch (_) {}
-    });
+    try {
+      // ─── FASE 1 — CORE ─────────────────────────────────────────────────────
+      setBootPhase(BOOT_PHASES.BOOTING);
+      try { loadCache(); } catch(_) {}
+      setBootProgress(3, "Preparando interface...");
+      renderFooterPeople();
+      renderGeneral();
+      BOOT_STATE.coreReady = true;
+
+      // ─── FASE 2 — METRICS_READY ────────────────────────────────────────────
+      BOOT_STATE.metricsReady = true;
+      setBootPhase(BOOT_PHASES.METRICS_READY);
+      renderCurrentView();
+      try { clearExpiredLocalDealPatches(); } catch(_) {}
+      try { applyLocalDealPatches(); } catch(_) {}
+      try { overlayPendingSyncState(); } catch(_) {}
+      await flushSyncQueue().catch(() => {});
+      BOOT_STATE.criticalSyncReady = true;
+      ensureFullDealsLoadedInBackground(200);
+
+      // ─── FASE 3 — FINALIZING → READY ──────────────────────────────────────
+      setBootPhase(BOOT_PHASES.FINALIZING);
+      await loadUserPhotosWithFallback();
+      BOOT_STATE.photosResolved = true;
+      setBootPhase(BOOT_PHASES.READY);
+      clearBootProgress();
+      EQD_BOOT_DONE = true;
+      renderCurrentView();
+      setSoftStatus("JS: ok");
+
+      setInterval(() => { if (!document.hidden) scheduleSyncFlush(300); }, 5000);
+
+      setInterval(async () => {
+        try{
+          if (document.hidden) return;
+          if (BX_INFLIGHT > 0 || SYNC_QUEUE_RUNNING || (Array.isArray(SYNC_QUEUE) && SYNC_QUEUE.length)) return;
+          if (!acquireTabLock("REFRESH", 20000)) return;
+          try {
+            await refreshData(true, { forceRecur: false, forceFullDeals: false, deferLeads: true });
+            if (el.modalOverlay.style.display !== "flex") {
+              renderCurrentView();
+            }
+          } finally {
+            releaseTabLock("REFRESH");
+          }
+        }catch(_){}
+      }, REFRESH_MS);
+
+    } catch(e) {
+      if (!EQD_BOOT_DONE) showFatal(e);
+      else showRuntimeWarn(e);
+    }
   })();
-
-  setInterval(() => { if (!document.hidden) scheduleSyncFlush(300); }, 5000);
-
-  setInterval(async () => {
-    try{
-      if (document.hidden) return;
-      if (BX_INFLIGHT > 0 || SYNC_QUEUE_RUNNING || (Array.isArray(SYNC_QUEUE) && SYNC_QUEUE.length)) return;
-      if (!acquireTabLock("REFRESH", 20000)) return;
-      try {
-        await refreshData(true, { forceRecur: false, forceFullDeals: false, deferLeads: true });
-        if (el.modalOverlay.style.display !== "flex") {
-          renderCurrentView();
-        }
-      } finally {
-        releaseTabLock("REFRESH");
-      }
-    }catch(_){}
-  }, REFRESH_MS);
-
-  EQD_BOOT_DONE = true;
 
 })();
 
