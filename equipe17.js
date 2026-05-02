@@ -6398,6 +6398,7 @@ restoreSyncQueue();
 const MARKETING_LOGO_URL = "https://bitrix24public.com/b24-6iyx5y.bitrix24.com.br/docs/pub/068f88c3fbd011deee71377532b727e5/showFile?token=0qvknd15el8g";
   const TRIADE_MEMBERS = ["19","15","17"];
   const TRIADE_LOGO_URL = "https://bitrix24public.com/b24-6iyx5y.bitrix24.com.br/docs/pub/925cea7526852edea9b0bb3949129fc7/showFile?token=yr53e4n87jh5";
+  const TRIADE_MEMBER_COLOR_MAP = { "19":"#0f766e", "15":"#7c3aed", "17":"#b45309" };
 
 
 function makeMarketingCard() {
@@ -6767,6 +6768,317 @@ function openMarketingPanelStub(selectedDateStr = "", monthAnchorStr = "") {
       }
     };
   };
+}
+
+// =========================
+// TRÍADE — Agenda coletiva (calendar + list, admin-protected)
+// =========================
+
+function triadeTitleClean(v) {
+  return String(v || '').replace(/^\[TRI\]\s*/,'').trim();
+}
+
+function triadeDealGroupKey(d) {
+  const title = norm(triadeTitleClean(d && d.TITLE));
+  const prazo = d && d._prazo ? new Date(d._prazo).toISOString().slice(0,16) : '';
+  const obs = norm((d && (d._obs || d[UF_OBS])) || '');
+  return [title, prazo, obs].join('|');
+}
+
+function groupTriadeDeals(list, members, memberColorMap) {
+  const arr = Array.isArray(list) ? list : [];
+  const byId = new Map((members || []).map((u) => [String(u.userId), u]));
+  const grouped = new Map();
+  arr.forEach((d) => {
+    if (!d) return;
+    const key = triadeDealGroupKey(d);
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        key,
+        title: triadeTitleClean(d.TITLE),
+        prazo: d._prazo || d[UF_PRAZO] || '',
+        obs: String(d._obs || d[UF_OBS] || '').trim(),
+        ids: [],
+        deals: [],
+        participantIds: [],
+        participantNames: [],
+      });
+    }
+    const g = grouped.get(key);
+    g.ids.push(String(d.ID || ''));
+    g.deals.push(d);
+    const ownerId = String(d.ASSIGNED_BY_ID || d._assigned || '').trim();
+    if (ownerId && !g.participantIds.includes(ownerId)) g.participantIds.push(ownerId);
+    const owner = byId.get(ownerId);
+    const ownerName = owner ? owner.name : ownerId;
+    if (ownerName && !g.participantNames.includes(ownerName)) g.participantNames.push(ownerName);
+    const colab = String(d._colabTxt || d[UF_COLAB] || '').split(',').map((x) => String(x || '').trim()).filter(Boolean);
+    colab.forEach((name) => { if (!g.participantNames.includes(name)) g.participantNames.push(name); });
+  });
+  return [...grouped.values()].map((g) => {
+    g.participantIds = g.participantIds.filter((id) => byId.has(id));
+    g.participantNames = g.participantIds.length
+      ? g.participantIds.map((id) => byId.get(id)?.name).filter(Boolean)
+      : g.participantNames;
+    g.participantChips = g.participantIds.map((uid) => {
+      const owner = byId.get(uid);
+      const bg = memberColorMap[uid] || '#475569';
+      return `<span class="eqd-tag" style="background:${bg};color:#fff;border-color:transparent">${escHtml(owner ? owner.name : uid)}</span>`;
+    }).join('');
+    return g;
+  }).sort((a, b) => {
+    const ta = a.prazo ? new Date(a.prazo).getTime() : 0;
+    const tb = b.prazo ? new Date(b.prazo).getTime() : 0;
+    return ta - tb;
+  });
+}
+
+async function deleteTriadeGroup(group, selectedDateStr = '', monthAnchorStr = '') {
+  if (!group || !Array.isArray(group.ids) || !group.ids.length) return;
+  if (!confirm(`Excluir ${group.ids.length > 1 ? 'estas tarefas' : 'esta tarefa'} da TRÍADE?`)) return;
+  group.ids.forEach((id) => {
+    removeDealLocal(String(id));
+    enqueueSync({ type: "dealDelete", dealId: String(id) });
+  });
+  rebuildDealsOpen();
+  renderCurrentView();
+  openTriadePanelStub(selectedDateStr, monthAnchorStr);
+  setTimeout(() => { refreshData(true).catch(()=>{}); }, 50);
+}
+
+async function completeTriadeGroup(group, selectedDateStr = '', monthAnchorStr = '') {
+  if (!group || !Array.isArray(group.ids) || !group.ids.length) return;
+  if (!confirm(`Concluir ${group.ids.length > 1 ? 'estas tarefas' : 'esta tarefa'} da TRÍADE?`)) return;
+  for (const id of group.ids) {
+    try { await markDone(String(id)); } catch (e) { alert('Falha ao concluir: ' + (e.message || e)); return; }
+  }
+  rebuildDealsOpen();
+  renderCurrentView();
+  openTriadePanelStub(selectedDateStr, monthAnchorStr);
+  setTimeout(() => { refreshData(true).catch(()=>{}); }, 50);
+}
+
+async function openTriadeGroupEditModal(group, selectedDateStr = '', monthAnchorStr = '') {
+  if (!group || !Array.isArray(group.ids) || !group.ids.length) return;
+  const members = USERS.filter((u) => TRIADE_MEMBERS.includes(String(u.userId)));
+  const memberColorMap = TRIADE_MEMBER_COLOR_MAP;
+  const base = group.prazo ? new Date(group.prazo) : new Date();
+  const localDefault = new Date(base.getTime() - base.getTimezoneOffset()*60000).toISOString().slice(0,16);
+  const selectedIds = group.participantIds.length ? group.participantIds.slice() : members.map((u) => String(u.userId));
+  openModal("Editar tarefa TRÍADE", `
+    <div class="eqd-warn" id="triEditWarn"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div style="grid-column:1 / -1"><div style="font-size:11px;font-weight:900;margin-bottom:4px">TÍTULO</div><input id="triEditTitle" value="${escHtml(group.title)}" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16)" /></div>
+      <div><div style="font-size:11px;font-weight:900;margin-bottom:4px">DATA E HORA</div><input id="triEditPrazo" type="datetime-local" value="${localDefault}" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16)" /></div>
+      <div style="grid-column:1 / -1"><div style="font-size:11px;font-weight:900;margin-bottom:4px">PARTICIPANTES</div><div style="display:flex;flex-wrap:wrap;gap:8px">${members.map((u)=>`<label style="display:inline-flex;gap:6px;align-items:center;padding:6px 10px;border:1px solid rgba(0,0,0,.08);border-radius:999px;background:${memberColorMap[String(u.userId)] || '#475569'};color:#fff"><input class="triEditChk" type="checkbox" value="${u.userId}" ${selectedIds.includes(String(u.userId)) ? 'checked' : ''}/> ${escHtml(u.name)}</label>`).join('')}</div></div>
+      <div style="grid-column:1 / -1"><div style="font-size:11px;font-weight:900;margin-bottom:4px">OBS</div><textarea id="triEditObs" rows="4" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16)">${escHtml(group.obs)}</textarea></div>
+      <div style="grid-column:1 / -1;display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap"><button class="eqd-btn" data-action="modalClose">Cancelar</button><button class="eqd-btn eqd-btnPrimary" id="triEditSave">SALVAR</button></div>
+    </div>
+  `, { wide:true });
+  document.getElementById('triEditSave').onclick = async () => {
+    const warn = document.getElementById('triEditWarn');
+    try {
+      const title = String(document.getElementById('triEditTitle').value || '').trim();
+      const prazoIso = localInputToIsoWithOffset(String(document.getElementById('triEditPrazo').value || '').trim());
+      const obs = String(document.getElementById('triEditObs').value || '').trim();
+      const checked = [...document.querySelectorAll('.triEditChk:checked')].map((c) => String(c.value || ''));
+      if (!title) throw new Error('Informe o título.');
+      if (!prazoIso) throw new Error('Informe data e hora.');
+      if (!checked.length) throw new Error('Selecione ao menos um participante.');
+      const participantNames = members.filter((u)=>checked.includes(String(u.userId))).map((u)=>u.name).join(", ");
+      const keepIds = group.ids.filter((id) => {
+        const d = getDealById(id);
+        const uid = String((d && (d.ASSIGNED_BY_ID || d._assigned)) || '');
+        return checked.includes(uid);
+      });
+      const removeIds = group.ids.filter((id) => !keepIds.includes(id));
+      removeIds.forEach((id) => {
+        removeDealLocal(String(id));
+        enqueueSync({ type: "dealDelete", dealId: String(id) });
+      });
+      for (const id of keepIds) {
+        const d = getDealById(id);
+        const fields = { TITLE:`[TRI] ${title}`, [UF_PRAZO]: prazoIso, [UF_COLAB]: participantNames, [UF_OBS]: obs ? `TRÍADE\n${obs}` : 'TRÍADE' };
+        updateDealInState(id, { TITLE:`[TRI] ${title}`, [UF_PRAZO]: prazoIso, _prazo: new Date(prazoIso).toISOString(), [UF_COLAB]: participantNames, _colabTxt: participantNames, [UF_OBS]: obs ? `TRÍADE\n${obs}` : 'TRÍADE', _obs: obs ? `TRÍADE\n${obs}` : 'TRÍADE', _hasObs: true, DATE_MODIFY:new Date().toISOString() });
+        enqueueSync({ type: "dealUpdate", dealId: String(id), fields });
+      }
+      const existingOwnerIds = keepIds.map((id) => {
+        const d = getDealById(id);
+        return String((d && (d.ASSIGNED_BY_ID || d._assigned)) || '');
+      });
+      for (const uid of checked.filter((uid) => !existingOwnerIds.includes(uid))) {
+        const stageId = await stageIdForAssignedUser(uid);
+        const fields = { CATEGORY_ID:Number(CATEGORY_MAIN), STAGE_ID:String(stageId), TITLE:`[TRI] ${title}`, ASSIGNED_BY_ID:Number(uid), [UF_PRAZO]: prazoIso, [UF_COLAB]: participantNames, [UF_OBS]: obs ? `TRÍADE\n${obs}` : 'TRÍADE' };
+        const tempId = makeTempId('TMP_DEAL');
+        upsertDealLocal(parseLocalDealFromFields(tempId, fields));
+        enqueueSync({ type: "dealAdd", tempId, fields });
+      }
+      rebuildDealsOpen();
+      closeModal();
+      openTriadePanelStub(selectedDateStr, monthAnchorStr);
+      setTimeout(() => { refreshData(true).catch(()=>{}); }, 50);
+    } catch (e) {
+      warn.style.display = 'block';
+      warn.textContent = String(e.message || e);
+    }
+  };
+}
+
+function openTriadePanelStub(selectedDateStr = "", monthAnchorStr = "") {
+  const members = USERS.filter((u) => TRIADE_MEMBERS.includes(String(u.userId)));
+  const memberColorMap = TRIADE_MEMBER_COLOR_MAP;
+  const today = new Date();
+  const hasSelectedDay = !!selectedDateStr;
+  const selected = hasSelectedDay ? (tryParseDateAny(`${selectedDateStr} 00:00`) || today) : today;
+  const monthAnchor = monthAnchorStr ? (tryParseDateAny(`${monthAnchorStr} 00:00`) || selected) : selected;
+  const monthBase = new Date(monthAnchor.getFullYear(), monthAnchor.getMonth(), 1);
+  const monthLabel = monthBase.toLocaleDateString('pt-BR', { month:'long', year:'numeric' });
+  const prevMonthBase = new Date(monthBase.getFullYear(), monthBase.getMonth()-1, 1);
+  const nextMonthBase = new Date(monthBase.getFullYear(), monthBase.getMonth()+1, 1);
+  const selectedKey = `${selected.getFullYear()}-${String(selected.getMonth()+1).padStart(2,'0')}-${String(selected.getDate()).padStart(2,'0')}`;
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+
+  const triDealsAll = (STATE.dealsAll || []).filter((d) => String(d.TITLE || "").trim().startsWith("[TRI]")).sort((a,b) => {
+    const ta = a._prazo ? new Date(a._prazo).getTime() : 0;
+    const tb = b._prazo ? new Date(b._prazo).getTime() : 0;
+    return ta - tb;
+  });
+  const triDealsOpen = (STATE.dealsOpen || []).filter((d) => String(d.TITLE || "").trim().startsWith("[TRI]")).sort((a,b) => {
+    const ta = a._prazo ? new Date(a._prazo).getTime() : 0;
+    const tb = b._prazo ? new Date(b._prazo).getTime() : 0;
+    return ta - tb;
+  });
+
+  const groupedAll = groupTriadeDeals(triDealsAll, members, memberColorMap);
+  const groupedOpen = groupTriadeDeals(triDealsOpen, members, memberColorMap);
+  const filteredDeals = groupedOpen.filter((g) => {
+    if (!g.prazo) return false;
+    const dt = new Date(g.prazo);
+    const key = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+    if (hasSelectedDay) return key === selectedKey;
+    return dt.getTime() >= todayStart;
+  });
+
+  const monthStart = new Date(monthBase.getFullYear(), monthBase.getMonth(), 1);
+  const firstWeekday = monthStart.getDay();
+  const startOffset = (firstWeekday + 6) % 7;
+  const gridStart = new Date(monthStart);
+  gridStart.setDate(gridStart.getDate() - startOffset);
+
+  const days = [];
+  for (let i=0;i<42;i++) {
+    const d = new Date(gridStart);
+    d.setDate(gridStart.getDate() + i);
+    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    const dayGroups = groupedAll.filter((x) => {
+      if (!x.prazo) return false;
+      const dx = new Date(x.prazo);
+      const xkey = `${dx.getFullYear()}-${String(dx.getMonth()+1).padStart(2,'0')}-${String(dx.getDate()).padStart(2,'0')}`;
+      return xkey === key;
+    });
+    const participantIds = [...new Set(dayGroups.flatMap((x) => x.participantIds || []).filter(Boolean))].slice(0,4);
+    const chips = participantIds.map((uid) => {
+      const owner = USERS.find((u) => String(u.userId) === uid);
+      const bg = memberColorMap[uid] || "#475569";
+      return `<span style="display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;border-radius:999px;background:${bg};color:#fff;font-size:10px;font-weight:900;padding:0 6px">${escHtml((owner ? owner.name : uid).slice(0,2).toUpperCase())}</span>`;
+    }).join("");
+    const borderColor = participantIds.length ? (memberColorMap[participantIds[0]] || "#475569") : "rgba(0,0,0,.08)";
+    const inMonth = d.getMonth() === monthBase.getMonth();
+    days.push(`<button class="eqd-btn" data-action="triPickDay" data-day="${key}" data-month="${monthBase.getFullYear()}-${String(monthBase.getMonth()+1).padStart(2,'0')}-01" style="min-height:96px;border-radius:16px;justify-content:flex-start;padding:10px 9px;background:${hasSelectedDay && key===selectedKey?'#111827':(participantIds.length?'#f0fdf4':'#fff')};color:${hasSelectedDay && key===selectedKey?'#fff':(inMonth?'#111':'#94a3b8')};border:2px solid ${hasSelectedDay && key===selectedKey?'#111827':borderColor};flex-direction:column;align-items:flex-start;gap:5px;box-shadow:none"><div style="display:flex;width:100%;justify-content:space-between;align-items:center"><span style="font-weight:950;font-size:14px">${d.getDate()}</span><span style="font-size:16px">${dayGroups.length > 0 ? '🗓️' : ''}</span></div><div style="display:flex;gap:4px;flex-wrap:wrap">${chips || '<span style="font-size:10px;opacity:.55">—</span>'}</div></button>`);
+  }
+
+  openModal("Painel TRÍADE — Agenda coletiva", `<div style="display:grid;grid-template-columns:minmax(490px,62%) 1fr;gap:12px;min-height:72vh">
+    <div style="border:1px solid rgba(0,0,0,.08);border-radius:16px;padding:14px;background:#fff;display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:center"><div style="font-weight:950">Calendário TRÍADE</div><div style="display:flex;gap:8px;align-items:center"><button class="eqd-btn" data-action="triNavMonth" data-day="${prevMonthBase.getFullYear()}-${String(prevMonthBase.getMonth()+1).padStart(2,'0')}-01" data-selected="${hasSelectedDay ? selectedKey : ''}">←</button><div style="font-size:12px;opacity:.72;min-width:150px;text-align:center">${escHtml(monthLabel)}</div><button class="eqd-btn" data-action="triNavMonth" data-day="${nextMonthBase.getFullYear()}-${String(nextMonthBase.getMonth()+1).padStart(2,'0')}-01" data-selected="${hasSelectedDay ? selectedKey : ''}">→</button></div></div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:12px">
+        <div style="font-size:11px;font-weight:900;opacity:.65;text-align:center">SEG</div>
+        <div style="font-size:11px;font-weight:900;opacity:.65;text-align:center">TER</div>
+        <div style="font-size:11px;font-weight:900;opacity:.65;text-align:center">QUA</div>
+        <div style="font-size:11px;font-weight:900;opacity:.65;text-align:center">QUI</div>
+        <div style="font-size:11px;font-weight:900;opacity:.65;text-align:center">SEX</div>
+        <div style="font-size:11px;font-weight:900;opacity:.65;text-align:center">SÁB</div>
+        <div style="font-size:11px;font-weight:900;opacity:.65;text-align:center">DOM</div>
+        ${days.join("")}
+      </div>
+      <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap"><div style="font-size:12px;font-weight:900">Participantes</div>${hasSelectedDay ? `<button class="eqd-btn" id="triShowUpcoming">Ver próximas tarefas</button>` : ``}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">${members.map((u) => `<span class="eqd-tag" style="background:${memberColorMap[String(u.userId)] || '#475569'};color:#fff;border-color:transparent">${escHtml(u.name)}</span>`).join('')}</div>
+    </div>
+    <div style="border:1px solid rgba(0,0,0,.08);border-radius:16px;padding:12px;background:#fff;display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:center"><div style="font-weight:950">Agenda TRÍADE</div><button class="eqd-btn eqd-btnPrimary" id="triCreateStub">Criar tarefa TRÍADE</button></div>
+      <div style="font-size:12px;opacity:.78">${hasSelectedDay ? `Dia selecionado: <strong>${escHtml(fmtDateOnly(selected))}</strong>` : `Mostrando <strong>todas as próximas tarefas</strong> a partir de hoje.`}</div>
+      <div style="display:flex;flex-direction:column;gap:8px;min-height:260px;max-height:58vh;overflow:auto">
+        ${filteredDeals.length ? filteredDeals.map((g) => {
+          return `<div class="eqd-card"><div class="eqd-inner"><div class="eqd-task">${escHtml(g.title)}</div>${g.prazo ? `<div style="margin-top:6px;font-size:13px;font-weight:900;color:#0f172a;display:flex;align-items:center;gap:6px"><span>🗓️</span><span>Data/Hora: <strong>${escHtml(fmt(g.prazo))}</strong></span></div>` : ''}<div class="eqd-meta">${g.participantNames.length ? `<span>Participantes: <strong>${escHtml(g.participantNames.join(', '))}</strong></span>` : ''}</div><div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">${g.participantChips}</div>${g.obs ? `<div style="margin-top:8px;font-size:12px;opacity:.82;white-space:pre-wrap">${escHtml(g.obs.replace(/^TRÍADE\n?/,''))}</div>` : ''}<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="eqd-btn" data-action="triEditGroup" data-group="${escHtml(g.key)}">Editar</button><button class="eqd-btn" data-action="triCompleteGroup" data-group="${escHtml(g.key)}">Concluir</button><button class="eqd-btn eqd-btnDanger" data-action="triDeleteGroup" data-group="${escHtml(g.key)}">Excluir</button></div></div></div>`;
+        }).join('') : `<div class="eqd-empty">${hasSelectedDay ? 'Nenhuma tarefa TRÍADE para este dia.' : 'Nenhuma próxima tarefa TRÍADE a partir de hoje.'}</div>`}
+      </div>
+    </div>
+  </div>`, { full:true, wide:true });
+
+  const groupMap = new Map(groupedAll.map((g) => [g.key, g]));
+  document.querySelectorAll('[data-action="triPickDay"]').forEach((btn) => btn.onclick = () => openTriadePanelStub(String(btn.getAttribute('data-day') || ''), String(btn.getAttribute('data-month') || '')));
+  document.querySelectorAll('[data-action="triNavMonth"]').forEach((btn) => btn.onclick = () => openTriadePanelStub(String(btn.getAttribute('data-selected') || ''), String(btn.getAttribute('data-day') || '')));
+  document.querySelectorAll('[data-action="triEditGroup"]').forEach((btn) => btn.onclick = () => openTriadeGroupEditModal(groupMap.get(String(btn.getAttribute('data-group') || '')), hasSelectedDay ? selectedKey : '', `${monthBase.getFullYear()}-${String(monthBase.getMonth()+1).padStart(2,'0')}-01`));
+  document.querySelectorAll('[data-action="triDeleteGroup"]').forEach((btn) => btn.onclick = () => deleteTriadeGroup(groupMap.get(String(btn.getAttribute('data-group') || '')), hasSelectedDay ? selectedKey : '', `${monthBase.getFullYear()}-${String(monthBase.getMonth()+1).padStart(2,'0')}-01`));
+  document.querySelectorAll('[data-action="triCompleteGroup"]').forEach((btn) => btn.onclick = () => completeTriadeGroup(groupMap.get(String(btn.getAttribute('data-group') || '')), hasSelectedDay ? selectedKey : '', `${monthBase.getFullYear()}-${String(monthBase.getMonth()+1).padStart(2,'0')}-01`));
+  const showUpcomingBtn = document.getElementById('triShowUpcoming');
+  if (showUpcomingBtn) showUpcomingBtn.onclick = () => openTriadePanelStub('', `${monthBase.getFullYear()}-${String(monthBase.getMonth()+1).padStart(2,'0')}-01`);
+  const createBtn = document.getElementById('triCreateStub');
+  if (createBtn) createBtn.onclick = async () => {
+    const base = hasSelectedDay ? (tryParseDateAny(`${selectedKey} 11:00`) || new Date()) : new Date();
+    const localDefault = new Date(base.getTime() - base.getTimezoneOffset()*60000).toISOString().slice(0,16);
+    openModal("Nova tarefa TRÍADE", `
+      <div class="eqd-warn" id="triWarnNew"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div style="grid-column:1 / -1"><div style="font-size:11px;font-weight:900;margin-bottom:4px">TÍTULO</div><input id="triTitleNew" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16)" placeholder="Ex.: Reunião coletiva" /></div>
+        <div><div style="font-size:11px;font-weight:900;margin-bottom:4px">DATA E HORA</div><input id="triPrazoNew" type="datetime-local" value="${localDefault}" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16)" /></div>
+        <div style="grid-column:1 / -1"><div style="font-size:11px;font-weight:900;margin-bottom:4px">PARTICIPANTES</div><div style="display:flex;flex-wrap:wrap;gap:8px">${members.map((u)=>`<label style="display:inline-flex;gap:6px;align-items:center;padding:6px 10px;border:1px solid rgba(0,0,0,.08);border-radius:999px;background:${memberColorMap[String(u.userId)] || '#475569'};color:#fff"><input class="triChkNew" type="checkbox" value="${u.userId}" checked /> ${escHtml(u.name)}</label>`).join('')}</div></div>
+        <div style="grid-column:1 / -1"><div style="font-size:11px;font-weight:900;margin-bottom:4px">OBS</div><textarea id="triObsNew" rows="4" style="width:100%;padding:10px;border-radius:12px;border:1px solid rgba(30,40,70,.16)"></textarea></div>
+        <div style="grid-column:1 / -1;display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap"><button class="eqd-btn" data-action="modalClose">Cancelar</button><button class="eqd-btn eqd-btnPrimary" id="triSaveNew">CRIAR</button></div>
+      </div>
+    `, { wide:true });
+    document.getElementById('triSaveNew').onclick = async () => {
+      const warn = document.getElementById('triWarnNew');
+      try {
+        const title = String(document.getElementById('triTitleNew').value || '').trim();
+        const prazoIso = localInputToIsoWithOffset(String(document.getElementById('triPrazoNew').value || '').trim());
+        const obs = String(document.getElementById('triObsNew').value || '').trim();
+        const checked = [...document.querySelectorAll('.triChkNew:checked')].map((c) => String(c.value || ''));
+        if (!title) throw new Error('Informe o título.');
+        if (!prazoIso) throw new Error('Informe data e hora.');
+        if (!checked.length) throw new Error('Selecione ao menos um participante.');
+        for (const uid of checked) {
+          const stageId = await stageIdForAssignedUser(uid);
+          const participantNames = members.filter((u)=>checked.includes(String(u.userId))).map((u)=>u.name).join(", ");
+          const fields = { CATEGORY_ID:Number(CATEGORY_MAIN), STAGE_ID:String(stageId), TITLE:`[TRI] ${title}`, ASSIGNED_BY_ID:Number(uid), [UF_PRAZO]: prazoIso, [UF_COLAB]: participantNames, [UF_OBS]: obs ? `TRÍADE\n${obs}` : 'TRÍADE' };
+          const created = await bx("crm.deal.add", { fields });
+          const realId = String((created && (created.result || created)) || '').trim() || makeTempId('TMP_DEAL');
+          upsertDealLocal(parseLocalDealFromFields(realId, fields));
+        }
+        rebuildDealsOpen();
+        closeModal();
+        openTriadePanelStub(hasSelectedDay ? selectedKey : '', `${monthBase.getFullYear()}-${String(monthBase.getMonth()+1).padStart(2,'0')}-01`);
+        setTimeout(() => { refreshData(true).catch(()=>{}); }, 50);
+      } catch (e) {
+        if (warn) { warn.style.display = 'block'; warn.textContent = String(e.message || e); }
+      }
+    };
+  };
+}
+
+async function openTriadePanelWithAuth() {
+  const pin = await askPin();
+  if (!isAdmin(pin)) {
+    openModal("Acesso negado", `
+      <div style="display:flex;flex-direction:column;gap:14px;align-items:center;padding:20px 10px">
+        <div style="font-size:32px">🔒</div>
+        <div style="font-weight:950;font-size:16px">Acesso restrito</div>
+        <div style="font-size:13px;opacity:.78;text-align:center">Senha de administrador inválida.<br>O acesso à agenda coletiva da TRÍADE é restrito.</div>
+        <button class="eqd-btn" data-action="modalClose" style="margin-top:4px">Fechar</button>
+      </div>
+    `);
+    return;
+  }
+  openTriadePanelStub();
 }
 
 function makeUserCard(u) {
@@ -11973,7 +12285,7 @@ document.addEventListener("click", async (e) => {
       if (act === "modalClose") return closeModal();
 
       if (act === "openMktPanel") { if (!assertPanelReady(false)) return; return openMarketingPanelStub(); }
-      if (act === "openTriadePanel") { if (!assertPanelReady(false)) return; return openTriadePanel(); }
+      if (act === "openTriadePanel") { if (!assertPanelReady(false)) return; return openTriadePanelWithAuth(); }
       if (act === "openUser") {
         const uid = String(a.getAttribute("data-userid") || "");
         if (!uid) return;
