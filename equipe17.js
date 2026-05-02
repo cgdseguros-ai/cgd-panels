@@ -4046,17 +4046,29 @@ restoreSyncQueue();
         if (existingFutureDeal) {
           updateDealInState(existingFutureDeal.ID, { TITLE: `FOLLOW-UP ${nm}`, [UF_PRAZO]: prazoIso, _prazo: new Date(prazoIso).toISOString(), _late:false, DATE_MODIFY:new Date().toISOString() });
           enqueueSync({ type: "dealUpdate", dealId: String(existingFutureDeal.ID), fields: { TITLE: `FOLLOW-UP ${nm}`, [UF_PRAZO]: prazoIso } });
+          closeModal();
+          if (opts && opts.returnToLeads) {
+            setLeadsCtx(opts.returnToLeads.userId, opts.returnToLeads.kw || "");
+            return reopenLeadsModalSafe({ noBackgroundReload: true });
+          }
+          renderCurrentView();
         } else {
           const extraFields = {};
           if (origId) extraFields[DEAL_UF_LEAD_ORIGEM] = origId;
-          await createFollowUpDealForUser(user, nm, prazoIso, extraFields);
+          // Fecha o modal imediatamente; a criação remota ocorre em background
+          closeModal();
+          if (opts && opts.returnToLeads) {
+            setLeadsCtx(opts.returnToLeads.userId, opts.returnToLeads.kw || "");
+            reopenLeadsModalSafe({ noBackgroundReload: true });
+          } else {
+            renderCurrentView();
+          }
+          try {
+            await createFollowUpDealForUser(user, nm, prazoIso, extraFields);
+          } catch (fuErr) {
+            showRuntimeWarn(fuErr);
+          }
         }
-        closeModal();
-        if (opts && opts.returnToLeads) {
-          setLeadsCtx(opts.returnToLeads.userId, opts.returnToLeads.kw || "");
-          return reopenLeadsModalSafe({ noBackgroundReload: true });
-        }
-        renderCurrentView();
       } catch (e) {
         warn.style.display = "block";
         warn.textContent = "Falha:\n" + (e.message || e);
@@ -7949,8 +7961,11 @@ function makeUserCard(u) {
     let realId = "";
 
     try {
-      UI_REFRESH_HOLD_UNTIL = Date.now() + 20000;
+      // Usar Math.max para não reduzir hold já definido pelo chamador e garantir proteção mínima de 90s
+      UI_REFRESH_HOLD_UNTIL = Math.max(UI_REFRESH_HOLD_UNTIL, Date.now() + 90000);
       pendingMutRegister("deal", oldId, opDone, { STAGE_ID: doneStageId, _hiddenByResched: true }, 90000, { source: "reschedule" });
+      // Registra patch local para proteger contra loadDeals que sobrescreve STATE.dealsAll
+      registerLocalDealPatch(String(oldId), { STAGE_ID: doneStageId, _hiddenByResched: true }, 90000);
 
       updateDealInState(oldId, { STAGE_ID: doneStageId, _hiddenByResched: true, DATE_MODIFY: new Date().toISOString(), __skipPending: true });
       const tempDeal = parseLocalDealFromFields(tempId, newFields);
@@ -11792,12 +11807,12 @@ ${marker}` : marker;
       .filter(Boolean);
     const legacyIds = legacyRows.map((r) => String(r && r.deal && r.deal.ID || "")).filter(Boolean);
     const legacyHtml = legacyRows.length ? `<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:space-between;align-items:center;margin:8px 0">
-        <div style="font-size:12px;font-weight:900;opacity:.78">Selecione as recorrências antigas para migrar para o formato novo ou marcar como concluídas.</div>
+        <div style="font-size:12px;font-weight:900;opacity:.78">Selecione as recorrências antigas para marcar como concluídas (remover da operação) ou migrar para o formato GET_V2.</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="eqd-btn" data-action="recurrenceAuditSelectAllLegacy">Selecionar todas</button>
           <button class="eqd-btn" data-action="recurrenceAuditClearLegacy">Limpar seleção</button>
           <button class="eqd-btn eqd-btnPrimary" data-action="recurrenceAuditMigrateLegacy" data-ids="${escHtml(legacyIds.join(','))}">Migrar selecionadas para GET_V2</button>
-          <button class="eqd-btn" data-action="recurrenceAuditMarkLegacyDone" data-ids="${escHtml(legacyIds.join(','))}">Concluir antigas selecionadas</button>
+          <button class="eqd-btn eqd-btnDanger" data-action="recurrenceAuditMarkLegacyDone" data-ids="${escHtml(legacyIds.join(','))}">Remover recorrências legadas</button>
         </div>
       </div><div style="overflow:auto"><table class="eqd-table"><thead><tr><th>Ação</th><th>ID</th><th>Título</th><th>USER</th><th>Prazo</th><th>Stage</th><th>Motivo</th><th>Ação</th></tr></thead><tbody>${legacyRows.map((r)=>{ const d = r.deal || {}; const did = String(d.ID || ""); return `<tr><td><label style="font-weight:900"><input type="checkbox" class="recAuditLegacyChk" value="${escHtml(did)}" checked> migrar</label></td><td><strong>${escHtml(did)}</strong></td><td>${escHtml(bestTitleFromText(String(d.TITLE || "")))}</td><td>${escHtml(recurrenceAuditUserName(d.ASSIGNED_BY_ID))}</td><td>${escHtml(fmtDateTime(d[UF_PRAZO] || ""))}</td><td>${escHtml(recurrenceAuditStageName(d.STAGE_ID))}</td><td>${escHtml(r.reason || "")}</td><td><button class="eqd-btn" data-action="recurrenceAuditIgnoreLegacy" data-id="${escHtml(did)}">Ignorar</button></td></tr>`; }).join("")}</tbody></table></div>` : `<div class="eqd-empty">Nenhuma recorrência antiga/legada encontrada com os filtros atuais.</div>`;
     const checkedPast = opts.includePast ? 'checked' : '';
