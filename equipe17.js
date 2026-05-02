@@ -7376,7 +7376,8 @@ function makeUserCard(u) {
     const recurrenceAuditUserBtn = `<button class="eqd-btn" data-action="recurrenceAuditUserPanel" data-userid="${user.userId}">AUDITORIA DE RECORRÊNCIAS</button>`;
     const followupAuditUserBtn = `<button class="eqd-btn" data-action="futureFupAuditUserPanel" data-userid="${user.userId}">AUDITORIA DE FUPs FUTUROS</button>`;
     const recurrenceAuditBtn = isAdminPanelUser(user.userId) ? `<button class="eqd-btn" data-action="recurrenceAuditPanel" data-userid="${user.userId}">AUDITORIA DE RECORRÊNCIAS • GERAL</button>` : ``;
-    const user1AdminPanel = isAdminPanelUser(user.userId) ? `<div id="user1AdminPanel" style="display:none;gap:8px;flex-wrap:wrap;padding-top:4px">${analysisBtn}${salesFunnelAdminBtn}${globalNoFuBtn}${lostFupBtn}${proposalsAdminBtn}${stoppedProposalsBtn}${recurrenceAuditBtn}${followupAuditAdminBtn}<button class="eqd-btn" data-action="syncBitrixPanel">SYNC BITRIX</button></div>` : ``;
+    const recurrenceLegacyBtn = isAdminPanelUser(user.userId) ? `<button class="eqd-btn" data-action="recurrenceAuditLegacyPanel">RECORRÊNCIAS ANTIGAS</button>` : ``;
+    const user1AdminPanel = isAdminPanelUser(user.userId) ? `<div id="user1AdminPanel" style="display:none;gap:8px;flex-wrap:wrap;padding-top:4px">${analysisBtn}${salesFunnelAdminBtn}${globalNoFuBtn}${lostFupBtn}${proposalsAdminBtn}${stoppedProposalsBtn}${recurrenceAuditBtn}${recurrenceLegacyBtn}${followupAuditAdminBtn}<button class="eqd-btn" data-action="syncBitrixPanel">SYNC BITRIX</button></div>` : ``;
     const viewMode = getUserDealViewMode(user.userId);
     const viewBtn = ``;
     const vincularFupBtn = ``;
@@ -11806,15 +11807,16 @@ ${marker}` : marker;
       .map(String)
       .filter(Boolean);
     const legacyIds = legacyRows.map((r) => String(r && r.deal && r.deal.ID || "")).filter(Boolean);
-    const legacyHtml = legacyRows.length ? `<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:space-between;align-items:center;margin:8px 0">
-        <div style="font-size:12px;font-weight:900;opacity:.78">Selecione as recorrências antigas para marcar como concluídas (remover da operação) ou migrar para o formato GET_V2.</div>
+    const legacyHtml = legacyRows.length ? `<div style="background:rgba(220,50,50,.07);border:1px solid rgba(220,50,50,.22);border-radius:12px;padding:10px;margin-bottom:10px">
+        <div style="font-size:13px;font-weight:950;color:#a00;margin-bottom:6px">⚠️ ${legacyRows.length} recorrência(s) do modelo antigo encontrada(s)</div>
+        <div style="font-size:12px;font-weight:900;opacity:.82;margin-bottom:8px">Selecione as recorrências antigas desejadas e use os botões abaixo. <strong>"Remover"</strong> move para <em>Concluído</em> (não exclui permanentemente). <strong>"Migrar"</strong> cria regras no formato GET_V2 e conclui as antigas.</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="eqd-btn" data-action="recurrenceAuditSelectAllLegacy">Selecionar todas</button>
+          <button class="eqd-btn" data-action="recurrenceAuditSelectAllLegacy">Selecionar todas (${legacyRows.length})</button>
           <button class="eqd-btn" data-action="recurrenceAuditClearLegacy">Limpar seleção</button>
-          <button class="eqd-btn eqd-btnPrimary" data-action="recurrenceAuditMigrateLegacy" data-ids="${escHtml(legacyIds.join(','))}">Migrar selecionadas para GET_V2</button>
-          <button class="eqd-btn eqd-btnDanger" data-action="recurrenceAuditMarkLegacyDone" data-ids="${escHtml(legacyIds.join(','))}">Remover recorrências legadas</button>
+          <button class="eqd-btn eqd-btnPrimary" data-action="recurrenceAuditMigrateLegacy" data-ids="${escHtml(legacyIds.join(','))}">Migrar selecionadas → GET_V2</button>
+          <button class="eqd-btn eqd-btnDanger" data-action="recurrenceAuditMarkLegacyDone" data-ids="${escHtml(legacyIds.join(','))}">Remover selecionadas (→ Concluído)</button>
         </div>
-      </div><div style="overflow:auto"><table class="eqd-table"><thead><tr><th>Ação</th><th>ID</th><th>Título</th><th>USER</th><th>Prazo</th><th>Stage</th><th>Motivo</th><th>Ação</th></tr></thead><tbody>${legacyRows.map((r)=>{ const d = r.deal || {}; const did = String(d.ID || ""); return `<tr><td><label style="font-weight:900"><input type="checkbox" class="recAuditLegacyChk" value="${escHtml(did)}" checked> migrar</label></td><td><strong>${escHtml(did)}</strong></td><td>${escHtml(bestTitleFromText(String(d.TITLE || "")))}</td><td>${escHtml(recurrenceAuditUserName(d.ASSIGNED_BY_ID))}</td><td>${escHtml(fmtDateTime(d[UF_PRAZO] || ""))}</td><td>${escHtml(recurrenceAuditStageName(d.STAGE_ID))}</td><td>${escHtml(r.reason || "")}</td><td><button class="eqd-btn" data-action="recurrenceAuditIgnoreLegacy" data-id="${escHtml(did)}">Ignorar</button></td></tr>`; }).join("")}</tbody></table></div>` : `<div class="eqd-empty">Nenhuma recorrência antiga/legada encontrada com os filtros atuais.</div>`;
+      </div><div style="overflow:auto"><table class="eqd-table"><thead><tr><th>Selecionar</th><th>ID</th><th>Título</th><th>USER</th><th>Prazo</th><th>Stage</th><th>Motivo</th><th>Ação</th></tr></thead><tbody>${legacyRows.map((r)=>{ const d = r.deal || {}; const did = String(d.ID || ""); return `<tr><td><label style="font-weight:900"><input type="checkbox" class="recAuditLegacyChk" value="${escHtml(did)}" checked> incluir</label></td><td><strong>${escHtml(did)}</strong></td><td>${escHtml(bestTitleFromText(String(d.TITLE || "")))}</td><td>${escHtml(recurrenceAuditUserName(d.ASSIGNED_BY_ID))}</td><td>${escHtml(fmtDateTime(d[UF_PRAZO] || ""))}</td><td>${escHtml(recurrenceAuditStageName(d.STAGE_ID))}</td><td>${escHtml(r.reason || "")}</td><td><button class="eqd-btn" data-action="recurrenceAuditIgnoreLegacy" data-id="${escHtml(did)}">Ignorar</button></td></tr>`; }).join("")}</tbody></table></div>` : `<div class="eqd-empty">Nenhuma recorrência antiga/legada encontrada. A varredura de legadas sempre considera vencidos e concluídos. Para uma busca mais abrangente, use <strong>Buscar no Bitrix</strong>.</div>`;
     const checkedPast = opts.includePast ? 'checked' : '';
     const checkedDone = opts.includeDone ? 'checked' : '';
     const daysAhead = Number(opts.daysAhead || 30) || 30;
@@ -11838,14 +11840,14 @@ ${marker}` : marker;
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
       <span class="eqd-tag">Duplicidades: <strong>${duplicateGroups.length}</strong></span>
-      <span class="eqd-tag">Legadas/sem assinatura: <strong>${legacyRows.length}</strong></span>
+      <span class="eqd-tag" ${legacyRows.length > 0 ? 'style="background:rgba(220,50,50,.15);color:#a00"' : ''}>Recorrências antigas: <strong>${legacyRows.length}</strong></span>
       <span class="eqd-tag">Campo de prazo: ${escHtml(UF_PRAZO)}</span>
       <span class="eqd-tag">Escopo: ${scopeUserId ? escHtml(recurrenceAuditUserName(scopeUserId)) : "Todos os USERS"}</span>
       ${allAutoFixIds.length ? `<button class="eqd-btn eqd-btnPrimary" data-action="recurrenceAuditFixAllVisible" data-ids="${escHtml(allAutoFixIds.join(','))}">Corrigir todas duplicidades seguras (${allAutoFixIds.length})</button>` : ``}
       ${duplicateGroups.length ? `<button class="eqd-btn" data-action="recurrenceAuditFixChecked">Corrigir duplicados selecionados</button>` : ``}
     </div>
-    <details open style="margin-bottom:12px"><summary style="cursor:pointer;font-weight:950">Duplicados/triplicados encontrados</summary>${duplicateHtml}</details>
-    <details open><summary style="cursor:pointer;font-weight:950">Recorrências antigas/legadas</summary><div style="margin-top:8px">${legacyHtml}</div></details>`;
+    <details open style="margin-bottom:12px"><summary style="cursor:pointer;font-weight:950">Recorrências antigas/legadas ${legacyRows.length > 0 ? `<span style="display:inline-block;background:rgba(220,50,50,.15);color:#c00;font-size:11px;font-weight:900;padding:2px 8px;border-radius:20px;margin-left:6px">⚠️ ${legacyRows.length} encontrada(s)</span>` : ''}</summary><div style="margin-top:8px">${legacyHtml}</div></details>
+    <details style="margin-bottom:12px"><summary style="cursor:pointer;font-weight:950">Duplicados/triplicados encontrados ${duplicateGroups.length > 0 ? `<span style="display:inline-block;background:rgba(0,0,0,.08);font-size:11px;font-weight:900;padding:2px 8px;border-radius:20px;margin-left:6px">${duplicateGroups.length}</span>` : ''}</summary>${duplicateHtml}</details>`;
   }
   async function openRecurrenceAuditModal(opts = {}) {
     const currentUserId = String((currentView && currentView.userId) || "");
@@ -11934,10 +11936,15 @@ ${marker}` : marker;
         updateRecurrenceAuditMonitor(report);
         await yieldUI();
 
-        recAuditMark(report, "Localizando legadas/sem assinatura", { count: deals.length });
+        recAuditMark(report, "Localizando legadas/sem assinatura (varredura ampla)", { count: deals.length });
         updateRecurrenceAuditMonitor(report);
         await yieldUI();
-        legacyRows = findLegacyRecurringDealsFromDeals(deals, ctx);
+        // Para detecção de legadas, usa conjunto amplo (inclui vencidos/concluídos independente dos filtros principais)
+        const legacyScanCtx = { ...ctx, includePast: true, includeDone: true };
+        const legacyScanDeals = (mode === "bitrix")
+          ? (ctx.includePast && ctx.includeDone ? deals : await loadRecurrenceAuditDeals(legacyScanCtx))
+          : loadRecurrenceAuditDealsLocal(legacyScanCtx);
+        legacyRows = findLegacyRecurringDealsFromDeals(legacyScanDeals, ctx);
         recAuditMark(report, "Legadas/sem assinatura localizadas", { count: legacyRows.length });
         recAuditFinish(report, "Auditoria concluída");
         updateRecurrenceAuditMonitor(report);
@@ -12383,6 +12390,7 @@ document.addEventListener("click", async (e) => {
       if (act === "futureFupAuditFixChecked") { return correctDuplicateFutureFollowups(futureFupAuditSelectedIds()); }
       if (act === "recurrenceAuditPanel") { return openRecurrenceAuditModal({}); }
       if (act === "recurrenceAuditUserPanel") { const uid = String(userId || ""); if (!uid) return; return openRecurrenceAuditModal({ userScopeId: uid }); }
+      if (act === "recurrenceAuditLegacyPanel") { return openRecurrenceAuditModal({ includePast: true, includeDone: true }); }
       if (act === "recurrenceAuditFix") { return correctDuplicateRecurringDeals(String(a.getAttribute("data-ids") || "").split(",").filter(Boolean), "markDone"); }
       if (act === "recurrenceAuditFixAllVisible") { return correctDuplicateRecurringDeals(String(a.getAttribute("data-ids") || "").split(",").filter(Boolean), "markDone"); }
       if (act === "recurrenceAuditFixChecked") { return correctDuplicateRecurringDeals(recurrenceAuditSelectedDuplicateIds(), "markDone"); }
