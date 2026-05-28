@@ -8496,7 +8496,7 @@ function makeUserCard(u) {
     const followupAuditUserBtn = `<button class="eqd-btn" data-action="futureFupAuditUserPanel" data-userid="${user.userId}">AUDITORIA DE FUPs FUTUROS</button>`;
     const recurrenceAuditBtn = isAdminPanelUser(user.userId) ? `<button class="eqd-btn" data-action="recurrenceAuditPanel" data-userid="${user.userId}">AUDITORIA DE RECORRÊNCIAS • GERAL</button>` : ``;
     const recurrenceLegacyBtn = isAdminPanelUser(user.userId) ? `<button class="eqd-btn" data-action="recurrenceAuditLegacyPanel">RECORRÊNCIAS ANTIGAS</button>` : ``;
-    const user1AdminPanel = isAdminPanelUser(user.userId) ? `<div id="user1AdminPanel" style="display:none;gap:8px;flex-wrap:wrap;padding-top:4px">${analysisBtn}${salesFunnelAdminBtn}${globalNoFuBtn}${lostFupBtn}${proposalsAdminBtn}${stoppedProposalsBtn}${recurrenceAuditBtn}${recurrenceLegacyBtn}${followupAuditAdminBtn}<button class="eqd-btn" data-action="syncBitrixPanel">SYNC BITRIX</button></div>` : ``;
+    const user1AdminPanel = isAdminPanelUser(user.userId) ? `<div id="user1AdminPanel" style="display:none;gap:8px;flex-wrap:wrap;padding-top:4px">${analysisBtn}${salesFunnelAdminBtn}${globalNoFuBtn}${lostFupBtn}${proposalsAdminBtn}${stoppedProposalsBtn}${recurrenceAuditBtn}${followupAuditAdminBtn}<button class="eqd-btn" data-action="syncBitrixPanel">SYNC BITRIX</button></div>` : ``;
     const viewMode = getUserDealViewMode(user.userId);
     const viewBtn = ``;
     const vincularFupBtn = ``;
@@ -8528,7 +8528,7 @@ function makeUserCard(u) {
             ${followListBtn}
             ${genericFollowupBtn}
             ${newTaskBtn}
-            ${recurBtn}${recurrenceAuditUserBtn}${followupAuditUserBtn}
+            ${recurBtn}${recurrenceAuditUserBtn}${recurrenceLegacyBtn}${followupAuditUserBtn}
             ${viewBtn}
             ${vincularFupBtn}
             <button class="eqd-btn" data-action="doneSearch" data-userid="${user.userId}">CONCLUÍDOS</button>
@@ -8627,7 +8627,7 @@ function makeUserCard(u) {
           ${followListBtn}
           ${genericFollowupBtn}
           ${newTaskBtn}
-          ${recurBtn}${recurrenceAuditUserBtn}${followupAuditUserBtn}
+          ${recurBtn}${recurrenceAuditUserBtn}${recurrenceLegacyBtn}${followupAuditUserBtn}
           ${viewBtn}
           ${vincularFupBtn}
           <button class="eqd-btn" data-action="doneSearch" data-userid="${user.userId}">CONCLUÍDOS</button>
