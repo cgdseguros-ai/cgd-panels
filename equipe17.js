@@ -233,27 +233,12 @@
     return /HTTP\s+(429|502|503|504)/i.test(txt) || /tempor[aá]rio/i.test(txt);
   }
 
-  // PATCH 2026-05-26: alguns notebooks disparam erro intermitente do core do Bitrix
-  // antes do GET terminar o boot: "Cannot read properties of undefined (reading 'init')"
-  // em /bitrix/js/main/core/core.min.js ou /getPages/. Esse erro é externo ao GET.
-  // Antes, ele derrubava o painel com "Falha ao carregar"; agora o GET mantém o boot e
-  // mostra apenas um aviso discreto, evitando que 1 ou 2 máquinas fiquem bloqueadas.
-  function isIgnorableBitrixCoreInitError(err) {
-    const txt = errorToText(err);
-    return /Cannot read properties of undefined \(reading ['"]init['"]\)/i.test(txt)
-      && /(bitrix\/js\/main\/core\/core\.min\.js|getPages)/i.test(txt);
-  }
-
   window.addEventListener("error", (e) => {
     const err = e && (e.error || e.message || e);
     try { console.error("[EQD][window.error]", err); } catch (_) {}
     const txt = errorToText(err);
     if (isTemporaryBxError(err)) {
       showRuntimeWarn("Bitrix limitou temporariamente as consultas. Tentando novamente em alguns segundos...");
-      return;
-    }
-    if (isIgnorableBitrixCoreInitError(err)) {
-      showRuntimeWarn("O Bitrix apresentou uma falha temporária de inicialização nesta máquina. O GET foi mantido aberto e continuará tentando carregar.");
       return;
     }
     if (!EQD_BOOT_DONE) return showFatal(err);
@@ -265,10 +250,6 @@
     try { console.error("[EQD][unhandledrejection]", err); } catch (_) {}
     if (isTemporaryBxError(err)) {
       showRuntimeWarn("Bitrix limitou temporariamente as consultas. Tentando novamente em alguns segundos...");
-      return;
-    }
-    if (isIgnorableBitrixCoreInitError(err)) {
-      showRuntimeWarn("O Bitrix apresentou uma falha temporária de inicialização nesta máquina. O GET foi mantido aberto e continuará tentando carregar.");
       return;
     }
     if (!EQD_BOOT_DONE) return showFatal(err);
@@ -2638,10 +2619,7 @@
         order: { ID: "DESC" },
       });
       const parsed = (deals || []).map((d) => parseDeal(d, maps)).filter(Boolean);
-      // PATCH 2026-05-26: a carga essencial do boot/refresh não pode apagar do estado local
-      // FUPs futuros criados ou já carregados além da janela de 5 dias. Quando apagava,
-      // os leads apareciam indevidamente como "Sem FOLLOW-UP" até o background terminar.
-      mergeDealsIntoState(parsed, { append: appendMode || oldOnly || essentialOnly || futureBeyond || recentOnly });
+      mergeDealsIntoState(parsed, { append: appendMode || oldOnly });
       STATE.dealsLoadedMode = essentialOnly ? "essential" : (recentOnly ? "recent" : ((oldOnly || futureBeyond) ? "partialFull" : "full"));
       if (!recentOnly && !oldOnly && !futureBeyond && !essentialOnly) STATE.lastFullDealsSyncAt = nowMs;
     } else {
@@ -3894,9 +3872,8 @@ ${curObs}` : transferAlert;
       // Métrica sempre visível no card de FUP. Para FUPs antigos sem vínculo, tenta contar pelo título normalizado + USER.
       const doneCount = countDoneFollowupsForDeal(deal);
       tags.push(`<span class="eqd-tag" title="Conta FUPs concluídos pelo lead vinculado ou, em FUPs antigos, por título/USER" style="border-color:#006BFF">FUPs concluídos: ${doneCount}</span>`);
-      const futureExtraCount = countOpenFutureFollowupsForDeal(deal, deal.ID);
-      const futureTotalCount = futureExtraCount + (isFutureOpenFollowupDeal(deal) ? 1 : 0);
-      if (futureTotalCount > 1) tags.push(`<span class="eqd-tag eqd-tagClickable" data-action="futureFupAuditUserPanel" data-userid="${escHtml(String(followupOwnerId(deal) || ''))}" title="Clique para abrir a auditoria e concluir FUPs futuros excedentes" style="background:#fef3c7;color:#92400e;border-color:#f59e0b">FUPs futuros: ${futureTotalCount}</span>`);
+      const futureCount = countOpenFutureFollowupsForDeal(deal, deal.ID);
+      if (futureCount > 0) tags.push(`<span class="eqd-tag" style="background:#fef3c7;color:#92400e">FUPs futuros: ${futureCount}</span>`);
     }
 
     const batchBox = context && context.allowBatch
@@ -4989,56 +4966,26 @@ restoreSyncQueue();
   async function deleteFutureFollowupsForLeadOrig(origId, ignoreDealId) {
     const needle = String(origId || "").trim();
     if (!needle) return 0;
-    const rows = futureFollowupRowsForLeadOrig(needle, ignoreDealId);
+    const rows = (STATE.dealsOpen || []).filter((d) => isFollowupDeal(d) && String(d.ID || "") !== String(ignoreDealId || "") && getDealLeadOrigemId(d) === needle && d._prazo && new Date(d._prazo).getTime() >= dayStart(new Date()).getTime());
     for (const d of rows) { removeDealLocal(String(d.ID)); enqueueSync({ type: "dealDelete", dealId: String(d.ID) }); }
     return rows.length;
   }
 
-  function futureFollowupRowsForLeadOrig(origId, ignoreDealId) {
-    const needle = String(origId || "").trim();
-    if (!needle) return [];
-    const start = dayStart(new Date()).getTime();
-    const seen = new Set();
-    return (STATE.dealsAll || [])
-      .map((d) => applyPendingMutOverlay("deal", d))
-      .filter((d) => {
-        const did = String(d && d.ID || "");
-        if (!did || seen.has(did)) return false;
-        seen.add(did);
-        if (String(did) === String(ignoreDealId || "")) return false;
-        if (!isFollowupDeal(d)) return false;
-        if (STATE.doneStageId && String(d.STAGE_ID) === String(STATE.doneStageId)) return false;
-        if (d._hiddenByResched) return false;
-        if (getDealLeadOrigemId(d) !== needle) return false;
-        const dt = tryParseDateAny(d._prazo || d[UF_PRAZO]);
-        return !!dt && dt.getTime() >= start;
-      });
-  }
-  function isFutureOpenFollowupDeal(deal) {
-    if (!deal || !isFollowupDeal(deal)) return false;
-    if (STATE.doneStageId && String(deal.STAGE_ID) === String(STATE.doneStageId)) return false;
-    if (deal._hiddenByResched) return false;
-    const dt = tryParseDateAny(deal._prazo || deal[UF_PRAZO]);
-    return !!dt && dt.getTime() >= dayStart(new Date()).getTime();
-  }
   function hasFutureFollowupForLeadOrig(origId, ignoreDealId) {
-    return futureFollowupRowsForLeadOrig(origId, ignoreDealId).length > 0;
+    const needle = String(origId || "").trim();
+    if (!needle) return false;
+    const now = Date.now();
+    return (STATE.dealsOpen || []).some((d) => isFollowupDeal(d) && String(d.ID) !== String(ignoreDealId || "") && getDealLeadOrigemId(d) === needle && d._prazo && new Date(d._prazo).getTime() >= dayStart(new Date()).getTime());
   }
   function countOpenFutureFollowupsForLeadOrig(origId, ignoreDealId) {
-    return futureFollowupRowsForLeadOrig(origId, ignoreDealId).length;
+    const needle = String(origId || "").trim();
+    if (!needle) return 0;
+    return (STATE.dealsOpen || []).filter((d) => isFollowupDeal(d) && String(d.ID) !== String(ignoreDealId || "") && getDealLeadOrigemId(d) === needle && d._prazo && new Date(d._prazo).getTime() >= dayStart(new Date()).getTime()).length;
   }
   function countDoneFollowupsForLeadOrig(origId) {
     const needle = String(origId || "").trim();
     if (!needle) return 0;
-    const seen = new Set();
-    return (STATE.dealsAll || [])
-      .map((d) => applyPendingMutOverlay("deal", d))
-      .filter((d) => {
-        const did = String(d && d.ID || "");
-        if (!did || seen.has(did)) return false;
-        seen.add(did);
-        return isFollowupDeal(d) && getDealLeadOrigemId(d) === needle && STATE.doneStageId && String(d.STAGE_ID) === String(STATE.doneStageId);
-      }).length;
+    return (STATE.dealsAll || []).filter((d) => isFollowupDeal(d) && getDealLeadOrigemId(d) === needle && STATE.doneStageId && String(d.STAGE_ID) === String(STATE.doneStageId)).length;
   }
   function followupOwnerId(deal) {
     return String((deal && (deal.ASSIGNED_BY_ID || deal._assigned || deal._ownerUserId)) || "").trim();
@@ -5069,17 +5016,7 @@ restoreSyncQueue();
     const owner = followupOwnerId(deal);
     if (!key || !owner) return 0;
     const start = dayStart(new Date()).getTime();
-    const seen = new Set();
-    return (STATE.dealsAll || []).map((d)=>applyPendingMutOverlay("deal", d)).filter((d) => {
-      const did = String(d && d.ID || "");
-      if (!did || seen.has(did)) return false;
-      seen.add(did);
-      if (!isFollowupDeal(d) || String(did) === String(ignoreDealId || "")) return false;
-      if (STATE.doneStageId && String(d.STAGE_ID) === String(STATE.doneStageId)) return false;
-      if (d._hiddenByResched) return false;
-      const dt = tryParseDateAny(d._prazo || d[UF_PRAZO]);
-      return followupOwnerId(d) === owner && followupTitleKey(d) === key && !!dt && dt.getTime() >= start;
-    }).length;
+    return (STATE.dealsOpen || []).filter((d) => isFollowupDeal(d) && String(d.ID) !== String(ignoreDealId || "") && followupOwnerId(d) === owner && followupTitleKey(d) === key && d._prazo && new Date(d._prazo).getTime() >= start).length;
   }
   function getLeadWithoutFutureFollowupCount(userId, statusId) {
     const leads = (STATE.leadsByUser.get(String(userId)) || []).filter((l) => String(l.STATUS_ID) === String(statusId || ""));
@@ -8043,7 +7980,7 @@ function openVisitasPanel(selectedDateStr = '', monthAnchorStr = '') {
     <div style="border:1px solid rgba(0,0,0,.08);border-radius:16px;padding:12px;background:#fff;display:flex;flex-direction:column;gap:10px">
       <div style="display:flex;justify-content:space-between;gap:10px;align-items:center"><div style="font-weight:950">Próximas visitas</div><button class="eqd-btn eqd-btnPrimary" id="visitaCreateBtn">Criar visita</button></div>
       <div style="font-size:12px;opacity:.78">A partir de: <strong>${escHtml(fmtDateOnly(selected))}</strong></div>
-      <div style="display:flex;flex-direction:column;gap:8px;min-height:260px;max-height:58vh;overflow:auto">${upcoming.length ? upcoming.map((g)=>`<div class="eqd-card"><div class="eqd-inner"><div class="eqd-task">${escHtml(g.title)}</div><div style="margin-top:6px;font-size:13px;font-weight:900;color:#0f172a;display:flex;align-items:center;gap:6px"><span>🗓️</span><span>Data/Hora: <strong>${escHtml(fmt(g.prazo))}</strong></span></div><div style="margin-top:6px;font-size:13px;font-weight:950;color:#1d4ed8;display:flex;align-items:center;gap:6px"><span>👤</span><span>USER: <strong>${escHtml(g.userName || g.userId || '—')}</strong></span></div><div class="eqd-meta"><span>Agenda também na TRÍADE</span></div>${g.obs ? `<div style="margin-top:8px;font-size:12px;opacity:.82;white-space:pre-wrap">${escHtml(g.obs)}</div>` : ''}<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="eqd-btn" data-action="visitaCompleteGroup" data-group="${escHtml(g.key)}">Concluir</button><button class="eqd-btn eqd-btnDanger" data-action="visitaDeleteGroup" data-group="${escHtml(g.key)}">Excluir</button></div></div></div>`).join('') : `<div class="eqd-empty">Nenhuma visita a partir do dia selecionado.</div>`}</div>
+      <div style="display:flex;flex-direction:column;gap:8px;min-height:260px;max-height:58vh;overflow:auto">${upcoming.length ? upcoming.map((g)=>`<div class="eqd-card"><div class="eqd-inner"><div class="eqd-task">${escHtml(g.title)}</div><div style="margin-top:6px;font-size:13px;font-weight:900;color:#0f172a;display:flex;align-items:center;gap:6px"><span>🗓️</span><span>Data/Hora: <strong>${escHtml(fmt(g.prazo))}</strong></span></div><div class="eqd-meta"><span>USER da visita: <strong>${escHtml(g.userName || g.userId || '—')}</strong></span><span>Agenda também na TRÍADE</span></div>${g.obs ? `<div style="margin-top:8px;font-size:12px;opacity:.82;white-space:pre-wrap">${escHtml(g.obs)}</div>` : ''}<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="eqd-btn" data-action="visitaCompleteGroup" data-group="${escHtml(g.key)}">Concluir</button><button class="eqd-btn eqd-btnDanger" data-action="visitaDeleteGroup" data-group="${escHtml(g.key)}">Excluir</button></div></div></div>`).join('') : `<div class="eqd-empty">Nenhuma visita a partir do dia selecionado.</div>`}</div>
     </div>
   </div>`, { full:true, wide:true });
   const groupMap = new Map(allGroups.map((g)=>[g.key,g]));
@@ -9280,18 +9217,15 @@ function makeUserCard(u) {
         });
       } catch (_) {}
 
-      // PATCH 2026-05-26: se o novo FUP já foi criado e apenas a conclusão do antigo falhou/atrasou,
-      // NÃO devolver o antigo para a tela. Ele fica oculto localmente e a conclusão entra na fila de recuperação.
-      // Isso elimina o efeito visual "a tarefa voltou e depois sumiu" durante latência/snapshot antigo do Bitrix.
+      // Se a criação do novo falhou, o antigo não foi concluído no Bitrix: rollback local seguro.
+      // Se o novo já foi criado e a conclusão do antigo falhou, mantemos o novo real e devolvemos o antigo ao estado original,
+      // evitando esconder uma tarefa ainda não concluída no servidor.
       removeDealLocal(tempId);
+      updateDealInState(oldId, { STAGE_ID: oldStageId, _hiddenByResched: false, DATE_MODIFY: new Date().toISOString(), __skipPending: true });
       if (realId) {
         registerLocalDealPatch(String(realId), { ...newFields, _pendingNewDeal: false, _rescheduledFrom: oldId }, 120000);
-        registerLocalDealPatch(String(oldId), { STAGE_ID: doneStageId, _hiddenByResched: true }, 180000);
-        updateDealInState(oldId, { STAGE_ID: doneStageId, _hiddenByResched: true, DATE_MODIFY: new Date().toISOString(), __skipPending: true });
-        enqueueSync({ type: 'dealUpdate', dealId: oldId, fields: { STAGE_ID: doneStageId }, reason: 'recoverRescheduleTx', txId, maxAttempts: 8 }, { delayMs: 900, maxAttempts: 8 });
         upsertRescheduleTx({ txId, oldDealId: oldId, oldStageId, doneStageId, newTempId: tempId, newRealId: realId, status: "newCreated_pendingOldDone", lastError: (e && e.message) ? e.message : String(e) });
       } else {
-        updateDealInState(oldId, { STAGE_ID: oldStageId, _hiddenByResched: false, DATE_MODIFY: new Date().toISOString(), __skipPending: true });
         removeRescheduleTx(txId);
       }
       UI_REFRESH_HOLD_UNTIL = Math.max(UI_REFRESH_HOLD_UNTIL, Date.now() + 30000);
@@ -12624,19 +12558,11 @@ ${marker}` : marker;
   function futureFupRowsLocal(userScopeId) {
     const uid = String(userScopeId || "");
     const start = dayStart(new Date()).getTime();
-    const seen = new Set();
-    return (STATE.dealsAll || [])
-      .map((d) => applyPendingMutOverlay("deal", d))
-      .filter((d) => {
-        const did = String(d && d.ID || "");
-        if (!did || seen.has(did)) return false;
-        seen.add(did);
-        if (!isFollowupDeal(d)) return false;
-        if (STATE.doneStageId && String(d.STAGE_ID || "") === String(STATE.doneStageId)) return false;
-        if (d._hiddenByResched) return false;
-        const dt = tryParseDateAny(d._prazo || d[UF_PRAZO]);
-        return !!dt && dt.getTime() >= start && (!uid || followupOwnerId(d) === uid);
-      });
+    return (STATE.dealsOpen || [])
+      .filter((d) => isFollowupDeal(d))
+      .filter((d) => !STATE.doneStageId || String(d.STAGE_ID || "") !== String(STATE.doneStageId))
+      .filter((d) => d._prazo && new Date(d._prazo).getTime() >= start)
+      .filter((d) => !uid || followupOwnerId(d) === uid);
   }
 
   async function futureFupRowsFromBitrix(userScopeId) {
@@ -14189,22 +14115,15 @@ document.addEventListener("click", async (e) => {
   el.today.onclick = () => {
     selectedDate = new Date();
     calendarCursor = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
-    renderCurrentView(true);
+    renderCurrentView();
   };
   el.tomorrow.onclick = () => {
     selectedDate = new Date(Date.now() + 86400000);
     calendarCursor = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
-    renderCurrentView(true);
+    renderCurrentView();
   };
-  function moveSelectedDay(deltaDays) {
-    const base = (selectedDate instanceof Date && !Number.isNaN(selectedDate.getTime())) ? selectedDate : new Date();
-    selectedDate = new Date(base.getFullYear(), base.getMonth(), base.getDate() + Number(deltaDays || 0), 0, 0, 0, 0);
-    calendarCursor = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
-    // A navegação por seta é ação manual e precisa furar UI_REFRESH_HOLD_UNTIL.
-    renderCurrentView(true);
-  }
-  if (el.prevday) el.prevday.onclick = () => moveSelectedDay(-1);
-  if (el.nextday) el.nextday.onclick = () => moveSelectedDay(1);
+  if (el.prevday) el.prevday.onclick = () => { selectedDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate()-1); calendarCursor = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1); renderCurrentView(); };
+  if (el.nextday) el.nextday.onclick = () => { selectedDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate()+1); calendarCursor = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1); renderCurrentView(); };
   el.calendar.onclick = openCalendarModal;
   el.globalLeads.onclick = async () => { if (!assertPanelReady(false)) return; try { await openGlobalLeadsModal("__ALL__"); } catch (e) { alert("Falha ao abrir LEADS geral: " + (e && (e.message || e) || e)); } };
   if (el.leadFunnelTop) el.leadFunnelTop.onclick = async () => { if (!assertPanelReady(false)) return; try { await openSalesFunnelPanel("1", { adminView: true, allUsers: true }); } catch(e) { alert("Falha ao abrir FUNIL DE LEADS: " + (e && (e.message || e) || e)); } };
