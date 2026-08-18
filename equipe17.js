@@ -68,12 +68,10 @@
     { name: "ANDREYNA AGUIAR", userId: 17, team: "ALFA" },
     { name: "MARIANA BARTHOLO", userId: 23, team: "ALFA" },
     { name: "JOSIANE VALIENTE", userId: 811, team: "ALFA" },
-    { name: "Bruna Luisa", userId: 3081, team: "ALFA" },
     { name: "Fernanda Silva", userId: 3083, team: "ALFA" },
 
     { name: "Livia Alves", userId: 3079, team: "BETA" },
     { name: "Nicole Rodrigues", userId: 4741, team: "BETA" },
-    { name: "MARCELA VILVERT", userId: 5265, team: "BETA" },
     { name: "MARIANA PLASA", userId: 6353, team: "BETA" },
 
     { name: "CESAR BARRETO", userId: 27, team: "ÔMEGA" },
@@ -89,8 +87,8 @@
   const OMEGA_FOLLOWUP_USERS = new Set(["27", "269", "3101", "29", "6875"]);
 
   const SPECIAL_PANEL_USERS = new Set([
-    "3079", "3083", "5265", "6353", "4741",
-    "1", "27", "15", "19", "17", "23", "811", "3081",
+    "3079", "3083", "6353", "4741",
+    "1", "27", "15", "19", "17", "23", "811",
     "841", "4945",
   ]);
   const ADMIN_PANEL_USERS = new Set(["1", "17"]);
@@ -7998,7 +7996,7 @@ restoreSyncQueue();
     openModal("Legenda", `<div style="display:flex;flex-direction:column;gap:8px;font-size:12px;font-weight:900"><div>🟢 Sem atraso</div><div>🟡 1 ou 2 atrasos</div><div>🟣 3 atrasos</div><div>🔴 4 ou mais atrasos</div></div>`);
   }
 
-  const MARKETING_MEMBERS = ["1","3079","3081","4945"];
+  const MARKETING_MEMBERS = ["1","3079","4945"];
 const MARKETING_LOGO_URL = "https://bitrix24public.com/b24-6iyx5y.bitrix24.com.br/docs/pub/068f88c3fbd011deee71377532b727e5/showFile?token=0qvknd15el8g";
   const TRIADE_MEMBERS = ["19","15","17"];
   const TRIADE_LOGO_URL = "https://bitrix24public.com/b24-6iyx5y.bitrix24.com.br/docs/pub/925cea7526852edea9b0bb3949129fc7/showFile?token=yr53e4n87jh5";
@@ -8152,7 +8150,7 @@ async function completeMarketingGroup(group, selectedDateStr = '', monthAnchorSt
 async function openMarketingGroupEditModal(group, selectedDateStr = '', monthAnchorStr = '') {
   if (!group || !Array.isArray(group.ids) || !group.ids.length) return;
   const members = USERS.filter((u) => MARKETING_MEMBERS.includes(String(u.userId)));
-  const memberColorMap = { "1":"#111827", "3079":"#7c3aed", "3081":"#b45309", "4945":"#be185d" };
+  const memberColorMap = { "1":"#111827", "3079":"#7c3aed", "4945":"#be185d" };
   const typeTags = ["GRAVAÇÃO","REUNIÃO","ROTEIRO","EDIÇÃO DE VIDEO","FOTOGRAFIA","OUTROS","PAUTA"];
   const meta = await ensureDealFieldsMeta().catch(() => null);
   const tipoItemsRaw = meta ? getFieldItemsFromMeta(meta, 'UF_CRM_1768185018696') : [];
@@ -8230,7 +8228,7 @@ async function openMarketingGroupEditModal(group, selectedDateStr = '', monthAnc
 function openMarketingPanelStub(selectedDateStr = "", monthAnchorStr = "") {
   const typeTags = ["GRAVAÇÃO","REUNIÃO","ROTEIRO","EDIÇÃO DE VIDEO","FOTOGRAFIA","OUTROS","PAUTA"];
   const members = USERS.filter((u) => MARKETING_MEMBERS.includes(String(u.userId)));
-  const memberColorMap = { "1":"#111827", "3079":"#7c3aed", "3081":"#b45309", "4945":"#be185d" };
+  const memberColorMap = { "1":"#111827", "3079":"#7c3aed", "4945":"#be185d" };
   const today = new Date();
   const hasSelectedDay = !!selectedDateStr;
   const selected = hasSelectedDay ? (tryParseDateAny(`${selectedDateStr} 00:00`) || today) : today;
