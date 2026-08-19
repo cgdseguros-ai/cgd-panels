@@ -69,6 +69,7 @@
     { name: "MARIANA BARTHOLO", userId: 23, team: "ALFA" },
     { name: "JOSIANE VALIENTE", userId: 811, team: "ALFA" },
     { name: "Fernanda Silva", userId: 3083, team: "ALFA" },
+    { name: "JULIA FIEL", userId: 7025, team: "ALFA" },
 
     { name: "Livia Alves", userId: 3079, team: "BETA" },
     { name: "Nicole Rodrigues", userId: 4741, team: "BETA" },
@@ -88,7 +89,7 @@
 
   const SPECIAL_PANEL_USERS = new Set([
     "3079", "3083", "6353", "4741",
-    "1", "27", "15", "19", "17", "23", "811",
+    "1", "27", "15", "19", "17", "23", "811", "7025",
     "841", "4945",
   ]);
   const ADMIN_PANEL_USERS = new Set(["1", "17"]);
